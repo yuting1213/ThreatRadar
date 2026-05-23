@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Local DB and its WAL sidecars
+threat_radar.db
+threat_radar.db-wal
+threat_radar.db-shm
+*.sqlite
+*.sqlite3
+
+# Env / secrets
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
