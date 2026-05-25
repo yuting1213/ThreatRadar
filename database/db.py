@@ -137,28 +137,49 @@ def mark_analysis_failed(news_id: int, max_retries: int) -> int:
         return retries
 
 
-def get_recent_news(limit: int = 100, level_filter: str | None = None) -> list[dict]:
-    """Return recent analyzed news, optionally filtered by threat level."""
+def get_recent_news(
+    limit: int = 100,
+    level_filter: str | None = None,
+    search_query: str | None = None,
+    sort_by: str = "threat_level",
+) -> list[dict]:
+    """Return recent analyzed news with optional filter, full-text search, and sort.
+
+    sort_by accepts: "threat_level" (default) | "published" | "source"
+    search_query matches against title, cve_ids, action_summary, affected_products.
+    """
+    _SORT_CLAUSES = {
+        "published":    "ORDER BY published DESC, created_at DESC",
+        "source":       "ORDER BY source ASC, created_at DESC",
+        "threat_level": ORDER_BY_LEVEL,
+    }
+    order = _SORT_CLAUSES.get(sort_by, ORDER_BY_LEVEL)
+
+    conditions: list[str] = ["analysis_done = 1"]
+    params: list = []
+
+    if level_filter:
+        conditions.append("threat_level = ?")
+        params.append(level_filter)
+
+    if search_query and search_query.strip():
+        q = f"%{search_query.strip()}%"
+        conditions.append(
+            "(title LIKE ? OR cve_ids LIKE ? OR action_summary LIKE ? OR affected_products LIKE ?)"
+        )
+        params.extend([q, q, q, q])
+
+    where = " AND ".join(conditions)
+    query = f"SELECT * FROM news WHERE {where} {order} LIMIT ?"
+    params.append(limit)
+
     with _connect() as conn:
-        if level_filter:
-            query = (
-                "SELECT * FROM news WHERE analysis_done = 1 AND threat_level = ? "
-                + ORDER_BY_LEVEL
-                + " LIMIT ?"
-            )
-            rows = conn.execute(query, (level_filter, limit)).fetchall()
-        else:
-            query = (
-                "SELECT * FROM news WHERE analysis_done = 1 "
-                + ORDER_BY_LEVEL
-                + " LIMIT ?"
-            )
-            rows = conn.execute(query, (limit,)).fetchall()
+        rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
 
 def save_github_scan(repo_url, dependencies, matched_cves) -> None:
-    """Save GitHub scan results. `dependencies` and `matched_cves` are JSON strings."""
+    """Save GitHub scan results. Dependencies and matched_cves are JSON strings."""
     with _connect() as conn:
         conn.execute(
             "INSERT INTO github_scans (repo_url, dependencies, matched_cves) "
@@ -176,3 +197,48 @@ def get_stats() -> dict:
             "WHERE analysis_done = 1 GROUP BY threat_level"
         ).fetchall()
         return {row["threat_level"] or "INFO": row["n"] for row in rows}
+
+
+# ── C 部分新增函數 ─────────────────────────────────────────────────────────────
+
+def get_scan_history(limit: int = 50) -> list[dict]:
+    """Return past GitHub scan records from github_scans table, newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, repo_url, dependencies, matched_cves, scanned_at "
+            "FROM github_scans ORDER BY scanned_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def reset_analysis(news_id: int) -> None:
+    """Reset a news item so it gets re-processed on the next crawl cycle.
+
+    Clears analysis_done and analysis_retries — does NOT wipe the existing
+    LLM results, so the old values remain visible until the new run completes.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE news SET analysis_done=0, analysis_retries=0 WHERE id=?",
+            (news_id,),
+        )
+        conn.commit()
+
+
+def get_analyzed_news_for_dropdown(limit: int = 200) -> list[tuple[str, int]]:
+    """Return (display_label, news_id) pairs for the re-analyze dropdown.
+
+    Labels are formatted as "[LEVEL] Title..." sorted by threat level then date.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, title, threat_level FROM news WHERE analysis_done=1 "
+            + ORDER_BY_LEVEL
+            + " LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            (f"[{row['threat_level']}] {row['title'][:80]}", row["id"])
+            for row in rows
+        ]
