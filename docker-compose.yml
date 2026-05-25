@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  # Main Application
+  radar-app:
+    build: .
+    ports:
+      - "7860:7860"
+    volumes:
+      - .:/app
+    depends_on:
+      - ollama
+
+  # Ollama Engine
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
