@@ -271,7 +271,7 @@ def run_github_scan(repo_url: str) -> str:
         return f"""
 <div style='padding:12px;background:#e8f5e9;border-radius:8px'>
   <strong>✅ 未發現已知漏洞</strong><br>
-  揃描了 {deps_found} 個依賴套件，與目前資料庫中的漏洞無匹配。
+  掃描了 {deps_found} 個依賴套件，與目前資料庫中的漏洞無匹配。
 </div>"""
 
     cards = []
@@ -301,7 +301,7 @@ def build_scan_history_html() -> str:
     if not records:
         return (
             "<p style='color:#888;text-align:center;padding:40px'>"
-            "尚無揃描歷史記錄，請先在「GitHub 揃描」分頁揃描一個 repo</p>"
+            "尚無掃描歷史記錄，請先在「GitHub 掃描」分頁掃描一個 repo</p>"
         )
 
     cards = []
@@ -347,7 +347,7 @@ def build_scan_history_html() -> str:
   </div>
   <div style='display:flex;gap:14px;align-items:center'>
     <span style='font-size:12px;color:{status_col};font-weight:600'>{status_txt}</span>
-    <span style='font-size:12px;color:#888'>揃描了 {dep_count} 個依賴</span>
+    <span style='font-size:12px;color:#888'>掃描了 {dep_count} 個依賴</span>
   </div>
   {f'<div style="margin-top:6px">{matched_chips}</div>' if matched_chips else ''}
 </div>""")
@@ -442,15 +442,6 @@ def create_app() -> gr.Blocks:
                 )
                 news_html = gr.HTML(value=build_news_html("全部", "", "威脅等級"))
 
-                _news_ins = [level_dd, search_box, sort_dd]
-                refresh_btn.click(fn=build_news_html, inputs=_news_ins, outputs=news_html)
-                level_dd.change(fn=build_news_html, inputs=_news_ins, outputs=news_html)
-                sort_dd.change(fn=build_news_html, inputs=_news_ins, outputs=news_html)
-                search_box.submit(fn=build_news_html, inputs=_news_ins, outputs=news_html)
-                crawl_btn.click(fn=manual_crawl, outputs=crawl_status).then(
-                    fn=build_news_html, inputs=_news_ins, outputs=news_html
-                )
-
                 gr.Markdown("---\n#### 🔁 重新分析單篇新聞")
                 with gr.Row():
                     reanalyze_dd = gr.Dropdown(
@@ -464,6 +455,21 @@ def create_app() -> gr.Blocks:
 
                 reanalyze_status = gr.Textbox(label="操作狀態", interactive=False)
 
+                # ── 事件連接（所有元件都已宣告後才綁定）──────────────────────
+                _news_ins = [level_dd, search_box, sort_dd]
+                refresh_btn.click(fn=build_news_html, inputs=_news_ins, outputs=news_html)
+                level_dd.change(fn=build_news_html, inputs=_news_ins, outputs=news_html)
+                sort_dd.change(fn=build_news_html, inputs=_news_ins, outputs=news_html)
+                search_box.submit(fn=build_news_html, inputs=_news_ins, outputs=news_html)
+
+                # 爬取完成後依序：更新狀態列 → 重整新聞卡片 → 更新 re-analyze 下拉
+                # 單一 .then() 鏈確保順序執行，dropdown 一定在 crawl 結束後才刷新
+                crawl_btn.click(fn=manual_crawl, outputs=crawl_status).then(
+                    fn=build_news_html, inputs=_news_ins, outputs=news_html
+                ).then(
+                    fn=refresh_reanalyze_choices, outputs=reanalyze_dd
+                )
+
                 reanalyze_btn.click(
                     fn=do_reanalyze,
                     inputs=reanalyze_dd,
@@ -473,41 +479,25 @@ def create_app() -> gr.Blocks:
                     fn=refresh_reanalyze_choices,
                     outputs=reanalyze_dd,
                 )
-                crawl_btn.click(
-                    fn=refresh_reanalyze_choices,
-                    outputs=reanalyze_dd,
-                    queue=False,
-                )
 
             # ══ Tab 2: GitHub 掃描 ═══════════════════════════════════════════
-            with gr.Tab("🔍 GitHub 揃描"):
+            with gr.Tab("🔍 GitHub 掃描"):
                 gr.Markdown("輸入 GitHub repo URL，系統自動比對依賴套件是否有已知漏洞")
                 repo_input = gr.Textbox(
                     placeholder="https://github.com/owner/repo",
                     label="GitHub Repo URL",
                 )
-                scan_btn    = gr.Button("開始揃描", variant="primary")
+                scan_btn    = gr.Button("開始掃描", variant="primary")
                 scan_result = gr.HTML()
                 scan_btn.click(fn=run_github_scan, inputs=repo_input, outputs=scan_result)
 
             # ══ Tab 3: 掃描歷史 ══════════════════════════════════════════════
-            with gr.Tab("📋 揃描歷史"):
+            with gr.Tab("📋 掃描歷史"):
                 gr.Markdown(
-                    "過去所有 GitHub repo 的揃描紀錄（讀取 `github_scans` 表，最新在前）"
+                    "過去所有 GitHub repo 的掃描紀錄（讀取 `github_scans` 表，最新在前）"
                 )
                 history_ref_btn = gr.Button("🔄 重新整理")
                 history_html    = gr.HTML(value=build_scan_history_html())
                 history_ref_btn.click(fn=build_scan_history_html, outputs=history_html)
 
-            # ══ Tab 4: 系統狀態 ══════════════════════════════════════════════
-            with gr.Tab("📊 系統狀態"):
-                stats_ref_btn = gr.Button("🔄 刷新統計")
-                stats_html    = gr.HTML(value=get_status_html())
-                stats_ref_btn.click(fn=get_status_html, outputs=stats_html)
-
-    return app
-
-
-def launch():
-    app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
+            # ══ Tab 4: 系統狀態 ════
