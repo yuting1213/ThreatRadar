@@ -69,7 +69,18 @@ def fetch_recent_cves(days_back: int = 1) -> int:
             url = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
             title = f"[NVD] {cve_id}: {desc[:100]}"
 
-            inserted = insert_news("NVD", title, url, now.isoformat(), desc[:1000])
+            # Extract CVSS baseScore — try v3.1, then v3.0, then v2.
+            cvss_score = None
+            metrics = cve.get("metrics", {})
+            for metric_key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+                entries = metrics.get(metric_key, [])
+                if entries:
+                    cvss_score = entries[0].get("cvssData", {}).get("baseScore")
+                    if cvss_score is not None:
+                        break
+
+            inserted = insert_news("NVD", title, url, now.isoformat(), desc[:1000],
+                                   cvss_score=cvss_score)
             if inserted:
                 new_count += 1
 
