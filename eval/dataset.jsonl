@@ -1,0 +1,41 @@
+# Track A evaluation ground truth.
+# One JSON object per line. Lines starting with # are skipped.
+#
+# Schema:
+#   id                : short identifier, e.g. "ex001"
+#   title             : news headline (zh-TW or en)
+#   content           : cleaned article text (≤ 1000 chars is plenty)
+#   labels.threat_level     : one of CRITICAL / HIGH / MEDIUM / LOW / INFO
+#   labels.cve_ids          : list of "CVE-YYYY-NNNN" strings (empty list if none)
+#   labels.affected_products: list of product / vendor names mentioned
+#
+# 20 labeled examples below. ex001–ex005 are illustrative; ex006–ex020 are
+# based on real, well-documented incidents (real CVE IDs / products).
+#
+# CAVEAT: famous CVEs (Log4Shell, Heartbleed, ...) may sit in the models'
+# training data, so a model could "recognize" rather than "analyze" them.
+# For a less biased eval, the team should ALSO add fresh news crawled by the
+# pipeline (pull from threat_radar.db once it has run). Target ~40 items.
+#
+# Level balance so far: CRITICAL ×5, HIGH ×5, MEDIUM ×4, LOW ×3, INFO ×3.
+#
+{"id": "ex001", "title": "CISA warns of actively exploited Microsoft Exchange zero-day", "content": "CISA has added a critical Microsoft Exchange Server vulnerability to its Known Exploited Vulnerabilities catalog. The flaw allows unauthenticated remote code execution and is being actively exploited in the wild. Patches are available. Federal agencies have one week to remediate.", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2024-12345"], "affected_products": ["Microsoft Exchange Server", "Microsoft"]}}
+{"id": "ex002", "title": "Apache Tomcat 嚴重資安漏洞 影響多版本", "content": "Apache 軟體基金會釋出 Tomcat 緊急更新，修補一個可導致遠端程式執行的 Deserialization 漏洞，CVSS 評分 8.1。Tomcat 9.x、10.x、11.x 多個版本受影響，企業應盡速升級。目前尚無 PoC 公開。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2024-23456"], "affected_products": ["Apache Tomcat", "Tomcat"]}}
+{"id": "ex003", "title": "Researchers publish PoC for WordPress plugin XSS", "content": "Security researchers from PatchStack disclosed a stored XSS vulnerability in a popular WordPress contact form plugin with 100,000+ installs. A proof-of-concept exploit was published alongside the advisory. The vendor released a fix two weeks ago; sites that have auto-update enabled are protected.", "labels": {"threat_level": "MEDIUM", "cve_ids": ["CVE-2024-34567"], "affected_products": ["WordPress", "Contact Form Plugin"]}}
+{"id": "ex004", "title": "OpenSSL releases routine maintenance patch", "content": "OpenSSL project released version 3.0.13 containing minor bug fixes and one low-severity security fix related to an edge case in certificate parsing. No exploitation has been observed and the issue requires an attacker to control both ends of a TLS connection.", "labels": {"threat_level": "LOW", "cve_ids": ["CVE-2024-45678"], "affected_products": ["OpenSSL"]}}
+{"id": "ex005", "title": "Verizon 發布 2024 年資料外洩調查報告 DBIR", "content": "Verizon 公布年度 Data Breach Investigations Report，分析全球超過 10,000 起資安事件。報告指出勒索軟體與第三方供應鏈攻擊佔比持續成長，金融與醫療業仍是主要目標。報告為產業趨勢分析，無具體漏洞披露。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
+{"id": "ex006", "title": "Apache Log4j 遠端程式碼執行漏洞 (Log4Shell) 遭大規模利用", "content": "Apache Log4j 2 函式庫存在一個透過 JNDI lookup 觸發的遠端程式碼執行漏洞，攻擊者只需讓應用程式記錄一段特製字串即可在伺服器上執行任意程式碼。漏洞影響範圍極廣，全球大量 Java 應用受影響，已觀察到攻擊者大規模掃描與利用。建議立即升級至 2.17.0 以上版本。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2021-44228"], "affected_products": ["Apache Log4j", "Log4j"]}}
+{"id": "ex007", "title": "xz Utils 供應鏈後門 影響 liblzma", "content": "資安研究員在 xz Utils 壓縮工具的 5.6.0 與 5.6.1 版本中發現惡意植入的後門，該後門透過 liblzma 影響使用 systemd 的 SSH 伺服器，可能允許攻擊者繞過認證進行遠端存取。此為精心策劃的供應鏈攻擊。建議降級至未受影響版本。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2024-3094"], "affected_products": ["xz Utils", "liblzma"]}}
+{"id": "ex008", "title": "Microsoft Exchange Server ProxyLogon 零時差遭 APT 利用", "content": "Microsoft Exchange Server 存在一個 server-side request forgery 漏洞，可與其他漏洞串連達成未經認證的遠端程式碼執行。微軟證實該漏洞已被某國家級駭客組織用於攻擊全球數萬台 Exchange 伺服器。建議立即套用緊急更新。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2021-26855"], "affected_products": ["Microsoft Exchange Server", "Microsoft Exchange"]}}
+{"id": "ex009", "title": "MOVEit Transfer SQL injection 遭勒索軟體集團大規模利用", "content": "Progress MOVEit Transfer 檔案傳輸軟體存在 SQL injection 漏洞，可導致未經授權的資料存取與竊取。Clop 勒索軟體集團利用此漏洞對全球數百個組織發動資料竊取攻擊。建議立即套用修補並檢查入侵跡象。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2023-34362"], "affected_products": ["MOVEit Transfer", "Progress MOVEit"]}}
+{"id": "ex010", "title": "OpenSSL Heartbleed 漏洞可洩漏伺服器記憶體", "content": "OpenSSL 的 TLS heartbeat 擴充功能存在邊界檢查缺失，攻擊者可讀取伺服器記憶體內容，可能洩漏私鑰、session token 與使用者憑證。漏洞影響大量採用 OpenSSL 的網站。建議升級 OpenSSL 並更換憑證。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2014-0160"], "affected_products": ["OpenSSL"]}}
+{"id": "ex011", "title": "Citrix NetScaler CitrixBleed 漏洞導致 session 劫持", "content": "Citrix NetScaler ADC 與 Gateway 存在一個敏感資訊洩漏漏洞，攻擊者可擷取 session token 繞過多因素認證並劫持使用者連線。已有多起利用此漏洞的攻擊案例。建議套用修補並終止所有現有 session。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2023-4966"], "affected_products": ["Citrix NetScaler", "NetScaler"]}}
+{"id": "ex012", "title": "Microsoft Office Follina 漏洞透過 MSDT 執行程式碼", "content": "Microsoft Windows Support Diagnostic Tool (MSDT) 存在一個可被 Office 文件觸發的遠端程式碼執行漏洞，使用者只要開啟特製文件即可被植入惡意程式，且無需啟用巨集。建議套用微軟釋出的緩解措施。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2022-30190"], "affected_products": ["Microsoft Office", "Windows MSDT"]}}
+{"id": "ex013", "title": "Windows Print Spooler PrintNightmare 提權漏洞", "content": "Windows Print Spooler 服務存在遠端程式碼執行與本地提權漏洞，攻擊者可取得 SYSTEM 權限。由於 Print Spooler 預設啟用，影響範圍廣泛。建議套用更新或停用相關服務。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2021-34527"], "affected_products": ["Windows Print Spooler", "Microsoft Windows"]}}
+{"id": "ex014", "title": "熱門 Jenkins 外掛存在 CSRF 漏洞 已釋出修補", "content": "某熱門 Jenkins CI/CD 外掛被發現存在跨站請求偽造 (CSRF) 漏洞，攻擊者在特定條件下可誘使管理員執行未授權操作。研究員已公開概念驗證 (PoC) 程式碼，但尚未觀察到實際野外攻擊。維護者已釋出修補版本，建議盡速更新。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": ["Jenkins"]}}
+{"id": "ex015", "title": "假冒銀行 OTP 的釣魚簡訊活動鎖定台灣用戶", "content": "資安業者偵測到一波鎖定台灣金融用戶的釣魚簡訊活動，攻擊者假冒銀行發送含惡意連結的簡訊，誘導受害者輸入帳號密碼與一次性密碼 (OTP)。活動規模中等，目前已知數百名受害者。建議勿點擊不明簡訊連結。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": []}}
+{"id": "ex016", "title": "開源圖片處理函式庫存在阻斷服務漏洞 已有 PoC", "content": "一個廣泛使用的開源圖片處理函式庫被發現在解析特製圖檔時會耗盡記憶體，可導致阻斷服務 (DoS)。研究員已釋出 PoC，但因僅造成服務中斷而非程式碼執行，風險評估為中等。維護者正在開發修補版本。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": ["ImageMagick"]}}
+{"id": "ex017", "title": "Django 釋出例行安全更新 修補低風險資訊洩漏", "content": "Django 專案釋出維護版本，修補一個低風險的資訊洩漏問題，僅在特定非預設設定下可被觸發，且需要本地存取權限。無已知野外利用。建議於下次維護週期更新。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["Django"]}}
+{"id": "ex018", "title": "nginx 釋出更新 修補低嚴重度安全強化", "content": "nginx 釋出新版本，包含若干臭蟲修正與一個低嚴重度的安全強化，該問題需要極特殊的設定條件才能觸發，實務上風險低。建議一般用戶於常規更新時套用。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["nginx"]}}
+{"id": "ex019", "title": "OWASP 發布 2024 年 Top 10 網頁安全風險更新", "content": "OWASP 基金會發布最新版 Top 10 網頁應用程式安全風險清單，反映近年攻擊趨勢的變化，包含存取控制失效與不安全設計等議題。此為產業參考指南，無特定漏洞或立即風險。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
+{"id": "ex020", "title": "研究團隊發表針對大型語言模型的提示注入攻擊研究", "content": "某學術團隊發表論文，探討大型語言模型 (LLM) 在面對提示注入 (prompt injection) 時的脆弱性，並提出數種防禦策略。此為研究性質報告，提升業界對 LLM 安全的認識，無立即可利用的漏洞。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}

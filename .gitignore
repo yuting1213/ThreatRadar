@@ -28,3 +28,11 @@ threat_radar.db-shm
 # OS
 .DS_Store
 Thumbs.db
+
+# Personal reports (each member writes their own — keep out of shared repo)
+report/
+*.docx
+handout_text.tmp
+
+# Evaluation run outputs (regenerated each run)
+eval/results/
