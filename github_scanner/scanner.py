@@ -6,6 +6,9 @@ CVE-affected products found in the news database.
 import requests
 import json
 import re
+import xml.etree.ElementTree as ET
+from packaging.version import Version
+from packaging.specifiers import SpecifierSet
 from database.db import get_recent_news, save_github_scan
 
 def extract_repo_path(repo_url: str) -> str:
