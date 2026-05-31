@@ -13,9 +13,9 @@ LLM batch.
 
 import threading
 
-from crawler.rss_crawler import crawl_all_feeds
-from crawler.nvd_crawler import fetch_recent_cves
-from analyzer.llm_analyzer import analyze_pending_news, analyze_single
+from crawler.rss import crawl_all_feeds
+from crawler.nvd import fetch_recent_cves
+from analyzer.llm import analyze_pending_news, analyze_single
 from database.db import record_crawl_run
 
 

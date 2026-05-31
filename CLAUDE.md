@@ -15,7 +15,7 @@ There is no test suite, linter config, or build step in this repo — do not inv
 
 ## Hard runtime dependency: Ollama
 
-The analyzer (`analyzer/llm_analyzer.py`) POSTs to `http://localhost:11434/api/chat`. Without a running Ollama daemon and the model in `config.OLLAMA_MODEL` (default `llama3.2`) pulled, items will fail analysis. When debugging "everything is INFO / 分析失敗", check Ollama first.
+The analyzer (`analyzer/llm.py`) POSTs to `http://localhost:11434/api/chat`. Without a running Ollama daemon and the model in `config.OLLAMA_MODEL` (default `llama3.2`) pulled, items will fail analysis. When debugging "everything is INFO / 分析失敗", check Ollama first.
 
 Failures are retried up to `config.MAX_ANALYSIS_RETRIES` (default 3) before being permanently marked `analysis_done=1` with `action_summary="分析失敗"`. The retry counter lives in `news.analysis_retries`. Don't change `analyze_single` to mark failures done on the first try — that's what the retry budget is preventing.
 
@@ -43,11 +43,11 @@ Key consequence: **`affected_products` is the join key** between the news pipeli
 
 - `config.py` — single source of truth for feeds, model name, schedule, DB path, threat levels, and UI colors. All other modules import from here; never hardcode these values elsewhere.
 - `database/db.py` — only place that touches SQLite. `_connect()` is a per-call context manager (no shared connection, no pooling). `ORDER_BY_LEVEL` defines the canonical CRITICAL→INFO sort and is reused across queries.
-- `crawler/rss_crawler.py`, `crawler/nvd_crawler.py` — both end at `insert_news()`; duplicate URLs are dropped by the UNIQUE constraint, not by app logic. NVD crawler does `time.sleep(1)` for the unauthenticated rate limit (5 req / 30s).
-- `analyzer/llm_analyzer.py` — pulls `WHERE analysis_done = 0`, calls Ollama with a Traditional Chinese prompt and `format: "json"` so the response is guaranteed-parseable JSON (no markdown stripping or regex extraction needed). Content is truncated to 800 chars before being sent to the model. `analyze_pending_news` runs `analyze_single` calls through a `ThreadPoolExecutor(max_workers=LLM_CONCURRENCY)` — each worker opens its own SQLite connection, and WAL keeps writes from blocking. On failure, calls `mark_analysis_failed()` rather than `update_analysis()` so the retry budget applies.
-- `github_scanner/scanner.py` — fetches `requirements.txt` and `package.json` via the unauthenticated GitHub contents API (60 req/hr limit). Other dependency formats listed in its docstring (pom.xml, go.mod) are **not** actually implemented.
+- `crawler/rss.py`, `crawler/nvd.py` — both end at `insert_news()`; duplicate URLs are dropped by the UNIQUE constraint, not by app logic. NVD crawler does `time.sleep(1)` for the unauthenticated rate limit (5 req / 30s).
+- `analyzer/llm.py` — pulls `WHERE analysis_done = 0`, calls Ollama with a Traditional Chinese prompt and `format: "json"` so the response is guaranteed-parseable JSON (no markdown stripping or regex extraction needed). Content is truncated to 800 chars before being sent to the model. `analyze_pending_news` runs `analyze_single` calls through a `ThreadPoolExecutor(max_workers=LLM_CONCURRENCY)` — each worker opens its own SQLite connection, and WAL keeps writes from blocking. On failure, calls `mark_analysis_failed()` rather than `update_analysis()` so the retry budget applies.
+- `github_scanner/github.py` — fetches `requirements.txt` and `package.json` via the unauthenticated GitHub contents API (60 req/hr limit). Other dependency formats listed in its docstring (pom.xml, go.mod) are **not** actually implemented.
 - `dashboard/app.py` — three Gradio tabs (威脅雷達 / GitHub 掃描 / 系統狀態). The "立即爬取" button delegates to `pipeline.run_crawl_cycle()` and surfaces its return message.
-- `crawler/rss_crawler.py` — fetches feed bytes via `requests` (15s timeout) before handing to `feedparser`, because `feedparser.parse(url)` has no timeout knob and would hang the entire scheduler tick if a feed stalls.
+- `crawler/rss.py` — fetches feed bytes via `requests` (15s timeout) before handing to `feedparser`, because `feedparser.parse(url)` has no timeout knob and would hang the entire scheduler tick if a feed stalls.
 
 ### Threat levels are a closed enum
 

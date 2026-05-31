@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import requests
 from config import OLLAMA_BASE_URL, OLLAMA_TIMEOUT
-from analyzer.llm_analyzer import ANALYSIS_PROMPT
+from analyzer.llm import ANALYSIS_PROMPT
 
 
 # Each model must be pulled in Ollama. On a 3060 12GB qwen2.5:14b also fits.

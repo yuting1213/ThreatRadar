@@ -56,6 +56,11 @@ END, created_at DESC
 def _connect():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    # WAL allows concurrent readers but still serializes writers. analyze_pending_news
+    # runs LLM_CONCURRENCY writers (each its own connection); without a busy timeout a
+    # second writer raises "database is locked" immediately and wastes a retry. Wait up
+    # to 5s for the lock instead of failing the write.
+    conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
     finally:
@@ -65,7 +70,7 @@ def _connect():
 def init_db() -> None:
     """Create tables if not exist, run idempotent column migrations, set WAL."""
     with _connect() as conn:
-        # WAL persists in the DB file header — setting it here once is enough
+        # WAL persists in the DB file header -- setting it here once is enough
         # for all future connections. Writers no longer block readers, so the
         # dashboard stays responsive while the scheduler is mid-cycle.
         conn.execute("PRAGMA journal_mode=WAL")
@@ -129,7 +134,7 @@ def update_analysis(news_id, threat_level, cve_ids, affected_products, action_su
 def mark_analysis_failed(news_id: int, max_retries: int) -> int:
     """
     Bump retry counter. Only mark analysis_done=1 once the retry budget
-    is exhausted — so a transient Ollama outage doesn't permanently lose
+    is exhausted -- so a transient Ollama outage doesn't permanently lose
     the row, but a permanently malformed row still stops being re-tried.
     Returns the new retry count.
     """
@@ -224,7 +229,7 @@ def get_stats() -> dict:
         return {row["threat_level"] or "INFO": row["n"] for row in rows}
 
 
-# ── C 部分新增函數 ─────────────────────────────────────────────────────────────
+# -- C 部分新增函數 --------------------------------------------------------------
 
 def get_news_by_id(news_id: int) -> dict | None:
     """Return a single news row by ID, or None if not found."""
@@ -248,7 +253,6 @@ def get_enhanced_stats() -> dict:
         unanalyzed = conn.execute(
             "SELECT COUNT(*) AS n FROM news WHERE analysis_done=0"
         ).fetchone()["n"]
-
 
         failed = conn.execute(
             "SELECT COUNT(*) AS n FROM news WHERE action_summary='分析失敗'"

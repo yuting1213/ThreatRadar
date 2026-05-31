@@ -22,14 +22,11 @@ import gradio as gr
 
 from database.db import (
     get_recent_news,
-    get_stats,
     get_enhanced_stats,
     get_scan_history,
-    reset_analysis,
     get_analyzed_news_for_dropdown,
-    get_news_by_id,
 )
-from github_scanner.scanner import scan_repo
+from github_scanner.github import scan_repo
 from pipeline import run_crawl_cycle, reanalyze_one
 from config import LEVEL_COLORS, THREAT_LEVELS, OLLAMA_BASE_URL, OLLAMA_MODEL
 
@@ -196,7 +193,9 @@ def _cvss_badge(score) -> str:
 def render_news_card(item: dict) -> str:
     level  = item.get("threat_level", "INFO")
     color  = LEVEL_COLORS.get(level, "#888888")
-    title  = html.escape(item.get("title", "(no title)"))
+    # Truncate the raw title BEFORE escaping — escaping first then slicing can cut
+    # an HTML entity (e.g. "&amp;") in half and render a broken character.
+    title  = html.escape(item.get("title", "(no title)")[:120])
     url    = _safe_url(item.get("url", "#"))
     source = html.escape(item.get("source", ""))
     action = html.escape(item.get("action_summary", ""))
@@ -233,7 +232,7 @@ def render_news_card(item: dict) -> str:
   </div>
   <a href="{url}" target="_blank"
      style="font-size:13px;font-weight:500;color:#1a1a1a;text-decoration:none">
-    {title[:120]}
+    {title}
   </a>
   <div class="card-action" style="margin-top:6px;font-size:12px;color:#555">{action}</div>
   {f'<div style="margin-top:5px">{cve_html}</div>' if cve_html else ''}
