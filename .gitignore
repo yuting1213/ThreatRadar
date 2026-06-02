@@ -33,6 +33,7 @@ Thumbs.db
 report/
 *.docx
 handout_text.tmp
+scripts/generate_report2.py
 
 # Evaluation run outputs (regenerated each run)
 eval/results/

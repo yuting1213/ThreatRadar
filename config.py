@@ -14,8 +14,11 @@ NVD_API_BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 NVD_RESULTS_PER_PAGE = 20
 
 # Ollama -- override via env var so Docker can point to the ollama service
+# Default model chosen from the Track A eval (eval/FINDINGS.md): qwen2.5:7b
+# scored highest on zh-TW threat-level classification (84% exact / 100% ±1,
+# vs 61% for llama3.2:3b). Must be pulled in Ollama before first run.
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "llama3.2")
+OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "qwen2.5:7b")
 OLLAMA_TIMEOUT  = 120
 
 # Max LLM analysis attempts per news item before giving up.

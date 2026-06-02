@@ -34,20 +34,87 @@ ANALYSIS_PROMPT = """你是一位資安威脅情報分析師。請分析以下�
 - INFO：資安新聞、研究報告、無立即風險"""
 
 
+# Few-shot exemplars prepended to every analysis call as prior chat turns.
+# Chosen to anchor the full severity range (CRITICAL / LOW / INFO) and to
+# demonstrate the exact JSON shape — including empty lists and a zh-TW
+# action_summary. The Track A eval (eval/FINDINGS.md) showed this few-shot
+# strategy (V1) lifts qwen2.5:7b threat-level accuracy from 84% to 92% over
+# the zero-shot prompt, with ±1 accuracy at 100%.
+#
+# These are hand-written and intentionally NOT drawn from eval/dataset.jsonl,
+# so the offline eval stays honest (its V1 uses its own held-out split).
+FEWSHOT_EXAMPLES = [
+    {
+        "title": "CISA 警告 Microsoft Exchange 零時差正遭積極利用",
+        "content": "CISA 將一個 Microsoft Exchange Server 重大漏洞列入已知遭利用漏洞清單，"
+                   "未經認證的攻擊者可遠端執行程式碼，目前正被野外積極利用，修補已釋出。",
+        "answer": {
+            "threat_level": "CRITICAL",
+            "cve_ids": ["CVE-2024-12345"],
+            "affected_products": ["Microsoft Exchange Server", "Microsoft"],
+            "action_summary": "立即套用 Exchange 修補並檢查入侵跡象",
+        },
+    },
+    {
+        "title": "OpenSSL 釋出例行維護更新",
+        "content": "OpenSSL 釋出 3.0.13，包含小型臭蟲修正與一個低嚴重度安全修補，"
+                   "需攻擊者同時控制 TLS 連線兩端才能觸發，目前無野外利用。",
+        "answer": {
+            "threat_level": "LOW",
+            "cve_ids": ["CVE-2024-45678"],
+            "affected_products": ["OpenSSL"],
+            "action_summary": "於常規維護週期更新 OpenSSL 即可",
+        },
+    },
+    {
+        "title": "Verizon 發布 2024 年資料外洩調查報告 DBIR",
+        "content": "Verizon 公布年度報告，分析全球逾萬起資安事件，指出勒索軟體與供應鏈攻擊"
+                   "持續成長。屬產業趨勢分析，無具體漏洞披露。",
+        "answer": {
+            "threat_level": "INFO",
+            "cve_ids": [],
+            "affected_products": [],
+            "action_summary": "參考報告趨勢，無需立即處置",
+        },
+    },
+]
+
+
+def _build_messages(title: str, content: str) -> list[dict]:
+    """
+    Build the chat messages for one analysis: the few-shot exemplars as
+    user/assistant pairs, then the real item as the final user turn. Content
+    is truncated to 800 chars (matches what the eval scored).
+    """
+    messages = []
+    for ex in FEWSHOT_EXAMPLES:
+        messages.append({
+            "role": "user",
+            "content": ANALYSIS_PROMPT.format(title=ex["title"], content=ex["content"][:800]),
+        })
+        messages.append({
+            "role": "assistant",
+            "content": json.dumps(ex["answer"], ensure_ascii=False),
+        })
+    messages.append({
+        "role": "user",
+        "content": ANALYSIS_PROMPT.format(title=title, content=content[:800]),
+    })
+    return messages
+
+
 def analyze_single(news_id: int, title: str, content: str) -> bool:
     """
     Call Ollama to analyze a single news item.
     Update DB with results.
     Return True on success.
     """
-    prompt = ANALYSIS_PROMPT.format(title=title, content=content[:800])
-
     try:
         resp = requests.post(
             f"{OLLAMA_BASE_URL}/api/chat",
             json={
                 "model": OLLAMA_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": _build_messages(title, content),
                 "stream": False,
                 "format": "json",  # Ollama constrains output to valid JSON
                 "options": {"num_predict": 300, "temperature": 0.1},
