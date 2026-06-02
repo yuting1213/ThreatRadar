@@ -6,11 +6,12 @@
 
 ## A：LLM / 資料品質
 
-**負責範圍**：`analyzer/`、`config.py`、新建 `eval/`
+**負責範圍**：`analyzer/`、`config.py`、`eval/`（已有初步框架）
 
 **任務**
-- 建立評測集：人工標註 20 篇 CRITICAL/HIGH + 20 篇 LOW/INFO 新聞作為 ground truth
-- 多模型比較：跑 `llama3.2`、`qwen2.5:7b`、`mistral`，量化 `threat_level` 分類準確率 + `affected_products` 召回率
+- 建立評測集：人工標註 20 篇 CRITICAL/HIGH + 20 篇 LOW/INFO 新聞作為 ground truth。`eval/dataset.jsonl` 已有 5 筆範例 + schema 說明，往下加即可
+- 多模型比較：執行 `python eval/run_eval.py`，會跑 `eval/run_eval.py` 裡 `MODELS` 列表並輸出 markdown 表格（threat_level 準確率、CVE P/R、affected_products 召回率、s/item 時間）
+- 預設模型：`llama3.2:3b`、`qwen2.5:7b`、`mistral:7b`。12GB GPU 可額外加 `qwen2.5:14b`
 - Prompt iteration：試 few-shot（範例放 prompt 裡）vs 現在的 zero-shot，看 `affected_products` 命名一致性能否改善
 - 可選：把 `threat_level` 跟 `affected_products` 拆成兩次 LLM call（單一職責），驗證準確率
 

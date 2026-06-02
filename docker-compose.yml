@@ -8,6 +8,10 @@ services:
       - "7860:7860"
     volumes:
       - .:/app
+    environment:
+      # Point to the ollama service by its Docker service name, not localhost
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2
     depends_on:
       - ollama
 
@@ -16,3 +20,8 @@ services:
     image: ollama/ollama
     ports:
       - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama   # persist pulled models across restarts
+
+volumes:
+  ollama_data:
