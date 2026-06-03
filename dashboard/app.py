@@ -28,7 +28,10 @@ from database.db import (
 )
 from github_scanner.github import scan_repo
 from pipeline import run_crawl_cycle, reanalyze_one
-from config import LEVEL_COLORS, THREAT_LEVELS, OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import (
+    LEVEL_COLORS, THREAT_LEVELS, OLLAMA_BASE_URL, OLLAMA_MODEL,
+    LLM_PROVIDER, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL,
+)
 
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
@@ -448,6 +451,27 @@ def _check_ollama() -> tuple[bool, str]:
     return False, f"❌ 無法連線至 {OLLAMA_BASE_URL}（確認 Ollama 是否在執行）"
 
 
+def _check_openai() -> tuple[bool, str]:
+    """Best-effort health check for an OpenAI-compatible API (read-only /models)."""
+    try:
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"} if OPENAI_API_KEY else {}
+        r = _req.get(f"{OPENAI_BASE_URL}/models", headers=headers, timeout=4)
+        if r.status_code == 200:
+            return True, f"✅ 已連線 · {OPENAI_BASE_URL}"
+        if r.status_code in (401, 403):
+            return False, f"⚠ {OPENAI_BASE_URL} 認證失敗（檢查 OPENAI_API_KEY）"
+        return False, f"⚠ {OPENAI_BASE_URL} 回應 {r.status_code}"
+    except Exception:
+        return False, f"❌ 無法連線至 {OPENAI_BASE_URL}（檢查 OPENAI_BASE_URL）"
+
+
+def _check_backend() -> tuple[bool, str, str]:
+    """Return (ok, health_msg, backend_label) for the active LLM backend."""
+    if LLM_PROVIDER == "openai":
+        return (*_check_openai(), f"☁ OpenAI 相容 API · {OPENAI_MODEL}")
+    return (*_check_ollama(), f"🖥 本地 Ollama · {OLLAMA_MODEL}")
+
+
 def get_status_html() -> str:
     stats = get_enhanced_stats()
     total     = stats["total_analyzed"]
@@ -457,7 +481,7 @@ def get_status_html() -> str:
     scans     = stats["scan_count"]
     last_crawl = stats["last_crawl"] or "（尚無記錄）"
 
-    ollama_ok, ollama_msg = _check_ollama()
+    backend_ok, backend_msg, backend_label = _check_backend()
 
     # Threat level bar chart
     bars = ""
@@ -493,8 +517,9 @@ def get_status_html() -> str:
   </div>
   <div>
     <p style='font-weight:600;margin-bottom:8px'>⚙ 系統狀態</p>
+    <div style='font-size:12px;color:#888;margin-bottom:6px'>LLM 後端：<strong>{backend_label}</strong></div>
     <div style='padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;
-         background:{"#e8f5e9" if ollama_ok else "#fce4ec"}'>{ollama_msg}</div>
+         background:{"#e8f5e9" if backend_ok else "#fce4ec"}'>{backend_msg}</div>
     <p style='font-weight:600;margin-bottom:8px'>威脅等級分布</p>
     {bars}
   </div>
@@ -635,7 +660,7 @@ def create_app() -> gr.Blocks:
 
             # ══ Tab 4: System Status ══════════════════════════════════════════
             with gr.Tab("📊 系統狀態"):
-                gr.Markdown("即時顯示資料庫統計、分析狀態與 Ollama 連線健康度。")
+                gr.Markdown("即時顯示資料庫統計、分析狀態與 LLM 後端（Ollama 或 API）連線健康度。")
                 stats_ref_btn = gr.Button("🔄 刷新統計")
                 stats_html    = gr.HTML(value=get_status_html())
                 stats_ref_btn.click(fn=get_status_html, outputs=stats_html)
