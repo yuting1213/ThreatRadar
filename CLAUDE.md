@@ -29,9 +29,14 @@ python scripts/generate_report.py
 
 Renders a Traditional-Chinese `.docx` progress report (with code-screenshot and architecture PNGs) into `scripts/report_outputs/`. Requires `python-docx` and `Pillow`, which are **not** in `requirements.txt` — install them separately. It embeds source as images by hardcoded line range (e.g. `dashboard/app.py:510-649`), so those ranges silently drift when the referenced files change.
 
-## Hard runtime dependency: Ollama
+## LLM backend: Ollama (default) or any OpenAI-compatible API
 
-The analyzer (`analyzer/llm.py`) POSTs to `http://localhost:11434/api/chat`. Without a running Ollama daemon and the model in `config.OLLAMA_MODEL` (default `llama3.2`) pulled, items will fail analysis. When debugging "everything is INFO / 分析失敗", check Ollama first.
+`analyzer/llm.py` routes every analysis through `_chat_json()`, which dispatches on `config.LLM_PROVIDER`:
+
+- **`ollama`** (default) — POSTs to `{OLLAMA_BASE_URL}/api/chat` with `format:"json"`. Needs a running Ollama daemon and `config.OLLAMA_MODEL` (default `qwen2.5:7b`, chosen by the Track A eval) pulled, or items fail analysis. When debugging "everything is INFO / 分析失敗", check Ollama first.
+- **`openai`** — POSTs to `{OPENAI_BASE_URL}/chat/completions` with `response_format: json_object` and a Bearer key. Works with OpenAI, Groq, OpenRouter, Together, or `ollama serve`'s own `/v1` endpoint. This is for teammates without a local GPU; set `LLM_PROVIDER=openai` + the three `OPENAI_*` vars.
+
+Both backends receive the **same** few-shot messages and produce the same parsed dict, so the rest of the pipeline is backend-agnostic. `config.py` auto-loads a local `.env` (no dependency; real env vars win) — see `.env.example`. `.env` is gitignored. The offline eval (`eval/run_eval.py`) is still Ollama-only by design (it compares local models).
 
 Failures are retried up to `config.MAX_ANALYSIS_RETRIES` (default 3) before being permanently marked `analysis_done=1` with `action_summary="分析失敗"`. The retry counter lives in `news.analysis_retries`. Don't change `analyze_single` to mark failures done on the first try — that's what the retry budget is preventing.
 

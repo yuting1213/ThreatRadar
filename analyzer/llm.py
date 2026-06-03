@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from database.db import get_unanalyzed_news, update_analysis, mark_analysis_failed
 from config import (
     OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    LLM_PROVIDER, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL,
     MAX_ANALYSIS_RETRIES, LLM_CONCURRENCY,
 )
 
@@ -103,26 +104,59 @@ def _build_messages(title: str, content: str) -> list[dict]:
     return messages
 
 
-def analyze_single(news_id: int, title: str, content: str) -> bool:
+def _chat_json(messages: list[dict]) -> dict:
     """
-    Call Ollama to analyze a single news item.
-    Update DB with results.
-    Return True on success.
+    Send chat messages to the configured LLM backend and return the parsed JSON.
+
+    Two backends, selected by config.LLM_PROVIDER:
+      - "ollama" (default): local Ollama /api/chat with format=json.
+      - "openai": any OpenAI-compatible /chat/completions endpoint (OpenAI,
+        Groq, OpenRouter, Together, ... or `ollama serve`'s own /v1), so
+        teammates without a local GPU can point at a hosted API instead.
+
+    Both ask the model to constrain output to a JSON object. Raises on HTTP
+    error or unparseable content (the caller's retry budget then applies).
     """
-    try:
+    if LLM_PROVIDER == "openai":
         resp = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
+            f"{OPENAI_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
             json={
-                "model": OLLAMA_MODEL,
-                "messages": _build_messages(title, content),
-                "stream": False,
-                "format": "json",  # Ollama constrains output to valid JSON
-                "options": {"num_predict": 300, "temperature": 0.1},
+                "model": OPENAI_MODEL,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 300,
+                "response_format": {"type": "json_object"},  # JSON mode
             },
             timeout=OLLAMA_TIMEOUT,
         )
         resp.raise_for_status()
-        result = json.loads(resp.json()["message"]["content"])
+        return json.loads(resp.json()["choices"][0]["message"]["content"])
+
+    # default: local Ollama
+    resp = requests.post(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        json={
+            "model": OLLAMA_MODEL,
+            "messages": messages,
+            "stream": False,
+            "format": "json",  # Ollama constrains output to valid JSON
+            "options": {"num_predict": 300, "temperature": 0.1},
+        },
+        timeout=OLLAMA_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return json.loads(resp.json()["message"]["content"])
+
+
+def analyze_single(news_id: int, title: str, content: str) -> bool:
+    """
+    Call the configured LLM backend to analyze a single news item.
+    Update DB with results.
+    Return True on success.
+    """
+    try:
+        result = _chat_json(_build_messages(title, content))
 
         update_analysis(
             news_id=news_id,

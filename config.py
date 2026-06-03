@@ -1,5 +1,25 @@
 import os
 
+
+# Minimal .env loader (no external dependency). If a .env file sits next to this
+# module, load its KEY=VALUE lines into the environment before reading config,
+# so teammates can drop their API key / backend choice in .env instead of
+# exporting env vars by hand. Real environment variables take precedence.
+def _load_dotenv():
+    path = os.path.join(os.path.dirname(__file__), ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+
+_load_dotenv()
+
 # RSS feeds to crawl
 RSS_FEEDS = [
     {"name": "CISA Alerts",       "url": "https://www.cisa.gov/uscert/ncas/alerts.xml"},
@@ -20,6 +40,17 @@ NVD_RESULTS_PER_PAGE = 20
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "qwen2.5:7b")
 OLLAMA_TIMEOUT  = 120
+
+# ---- LLM backend selection ----
+# "ollama" (default, runs locally) or "openai" (any OpenAI-compatible chat API).
+# Teammates without a local GPU set LLM_PROVIDER=openai and point the three
+# OPENAI_* vars at a hosted service — OpenAI, Groq, OpenRouter, Together,
+# DeepInfra, or even `ollama serve`'s own /v1 endpoint. The prompt, few-shot
+# exemplars and the rest of the pipeline are identical for both backends.
+LLM_PROVIDER    = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+OPENAI_API_KEY  = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL    = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # Max LLM analysis attempts per news item before giving up.
 MAX_ANALYSIS_RETRIES = 3
