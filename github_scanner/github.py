@@ -31,6 +31,15 @@ def fetch_file(repo_path: str, filename: str) -> str:
         return resp.text
     return ""
 
+def clean_version(version: str) -> str:
+    if not version:
+        return ""
+
+    version = str(version).strip()
+    version = version.lstrip("^~=<>& ")
+    version = version.lstrip("v")
+
+    return version
 
 def parse_dependencies(repo_path: str) -> list[dict]:
     """
@@ -296,12 +305,21 @@ def _find_dep_matches(dependencies: list[dict], news_items: list[dict]) -> list[
 
         for candidate_name, dep in candidates.items():
             if candidate_name in product_tokens:
+                affected_range = item.get("affected_version_range", "")
+
+                if not is_version_affected(dep.get("version", ""), affected_range):
+                    continue
+
                 matches.append({
-                    "dep_name":       dep["name"],
-                    "news_title":     item["title"],
-                    "threat_level":   item.get("threat_level", "INFO"),
-                    "action_summary": item.get("action_summary", ""),
-                    "url":            item.get("url", ""),
+                    "dep_name":               dep["name"],
+                    "dep_version":            dep.get("version", ""),
+                    "ecosystem":              dep.get("ecosystem", ""),
+                    "source_file":            dep.get("source_file", ""),
+                    "news_title":             item["title"],
+                    "threat_level":           item.get("threat_level", "INFO"),
+                    "affected_version_range": affected_range,
+                    "action_summary":         item.get("action_summary", ""),
+                    "url":                    item.get("url", ""),
                 })
                 break  # one match per news item
 
