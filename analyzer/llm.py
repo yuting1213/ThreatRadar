@@ -168,15 +168,6 @@ def _should_run_secondary(mode: str, primary_result: dict) -> bool:
 
 
 def analyze_single(news_id: int, title: str, content: str) -> bool:
-    """Analyze one news item with the configured primary (and optional secondary).
-
-    config.PRIMARY_PROVIDER chooses the AUTHORITATIVE model — local Ollama or the
-    online API — and that one fills the news table (the dashboard's default view)
-    and drives the retry budget. ANALYSIS_MODE decides whether the OTHER model
-    also runs (compare/hybrid); its result is recorded in news_analyses for
-    comparison but never blocks analysis_done. Returns True when the primary
-    succeeded.
-    """
     from analyzer.providers import make_provider  # lazy import breaks import cycle
 
     mode = config.ANALYSIS_MODE
@@ -214,12 +205,6 @@ def analyze_single(news_id: int, title: str, content: str) -> bool:
 
 
 def analyze_pending_news() -> int:
-    """
-    Fetch all unanalyzed news and run analyze_single in parallel.
-    Each worker opens its own sqlite connection inside _connect(), and sqlite is
-    in WAL mode (with a busy timeout) so concurrent writes don't block each other.
-    Return number of items whose PRIMARY analysis succeeded.
-    """
     pending = get_unanalyzed_news(limit=50)
     if not pending:
         return 0
