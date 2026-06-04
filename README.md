@@ -33,17 +33,54 @@ On startup the app will:
 
 - **威脅雷達** — recent threats as color-coded cards, filterable by threat level
 - **GitHub 掃描** — paste a public GitHub repo URL, the scanner parses its `requirements.txt` / `package.json` and matches against affected products from the news DB
-- **系統狀態** — counts per threat level + a refresh button
+- **掃描歷史** — past GitHub scans with expandable hit details
+- **模型比較 / 匯出** — local vs cloud threat-level comparison, plus CSV / JSONL / comparison-CSV exports to `outputs/`
+- **系統狀態** — counts per threat level, Ollama health, cloud-model status and current analysis mode
+
+## Choosing the analysis model (local vs online API)
+
+The model that performs the analysis is fully swappable via two environment variables — no code edits needed.
+
+**`PRIMARY_PROVIDER`** picks the authoritative model (it fills the dashboard and drives retries):
+
+- `local` (default) — the Ollama model in `OLLAMA_MODEL`, fully offline.
+- `cloud` — the online API configured in the `CLOUD_LLM_*` block.
+
+The cloud adapter is **vendor-neutral**: it speaks the OpenAI-compatible `/chat/completions` schema, so any compatible endpoint works. Set `CLOUD_LLM_BASE_URL`, `CLOUD_LLM_MODEL`, `CLOUD_LLM_API_KEY`. Examples (use the provider's current model id):
+
+| Provider | `CLOUD_LLM_BASE_URL` | example `CLOUD_LLM_MODEL` |
+|----------|----------------------|---------------------------|
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Qwen (DashScope) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Groq / Together / OpenRouter / local vLLM | (their base URL) | (their model id) |
+
+So to run everything on, say, **DeepSeek**: set `PRIMARY_PROVIDER=cloud`, `CLOUD_LLM_BASE_URL=https://api.deepseek.com/v1`, `CLOUD_LLM_MODEL=deepseek-chat`, `CLOUD_LLM_API_KEY=...`.
+
+**`ANALYSIS_MODE`** decides whether a *second* model also runs (for comparison):
+
+- `single` (default) — only the primary model.
+- `compare` — primary + the other model on every item.
+- `hybrid` — primary on every item; the other only re-checks HIGH/CRITICAL items.
+
+Every model's full output is stored per-item in the `news_analyses` table, so the two never overwrite each other; the `news` table keeps the primary model's result as the dashboard's default view. **API keys are read from the environment only — never commit them.**
 
 ## Configuration
 
-Edit `config.py` to tune:
+Runtime config is read from environment variables (see `.env.example`); `config.py` holds the defaults.
 
 | 設定 | 預設 | 說明 |
 |------|------|------|
 | `RSS_FEEDS` | 5 個來源 | 要爬的 RSS feed 清單 |
-| `OLLAMA_MODEL` | `llama3.2` | 分析用的 Ollama 模型 |
+| `OLLAMA_MODEL` | `llama3.2` | 本地分析用的 Ollama 模型 |
 | `OLLAMA_TIMEOUT` | 120 秒 | 單次 LLM call 的 timeout |
+| `PRIMARY_PROVIDER` | `local` | 主要分析模型：`local`（Ollama）或 `cloud`（線上 API） |
+| `ANALYSIS_MODE` | `single` | `single` / `compare` / `hybrid`（是否同時跑第二個模型） |
+| `CLOUD_LLM_BASE_URL` | OpenAI v1 | 雲端 LLM 的 OpenAI 相容端點（DeepSeek、Qwen…） |
+| `CLOUD_LLM_MODEL` | （空） | 雲端模型名稱；與 API key 都設定後才啟用 |
+| `CLOUD_LLM_API_KEY` | （空） | 由環境變數提供，切勿 commit |
+| `NVD_MAX_PAGES` | 5 | 每次 NVD 爬取最多翻幾頁（每頁 20 筆） |
+| `GITHUB_TOKEN` / `NVD_API_KEY` | （空） | 設定後可提高對應 API 的 rate limit |
 | `CRAWL_INTERVAL_MINUTES` | 60 | scheduler 觸發間隔 |
 | `MAX_ANALYSIS_RETRIES` | 3 | Ollama 短暫故障時，每筆新聞最多重試幾次才放棄 |
 | `LLM_CONCURRENCY` | 3 | 同時跑幾個 LLM 分析 worker（Ollama 開 `OLLAMA_NUM_PARALLEL` 才有完整效益） |

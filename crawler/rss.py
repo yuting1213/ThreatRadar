@@ -4,6 +4,7 @@ For each feed, parse with feedparser and insert new items into DB.
 Extract plain text from HTML content using basic regex (no extra deps).
 """
 
+import html
 import time
 import feedparser
 import re
@@ -18,9 +19,10 @@ RSS_FETCH_TIMEOUT = 15
 RSS_USER_AGENT = "ThreatRadar/1.0"
 
 
-def clean_html(html: str) -> str:
-    """Strip HTML tags, return plain text (max 1000 chars)."""
-    text = re.sub(r'<[^>]+>', ' ', html or '')
+def clean_html(raw: str) -> str:
+    """Strip HTML tags + decode entities, return plain text (max 1000 chars)."""
+    text = re.sub(r'<[^>]+>', ' ', raw or '')
+    text = html.unescape(text)              # &amp; -> &, &#39; -> ', &nbsp; -> space
     text = re.sub(r'\s+', ' ', text).strip()
     return text[:1000]
 

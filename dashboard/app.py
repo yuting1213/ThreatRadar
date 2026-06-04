@@ -25,10 +25,17 @@ from database.db import (
     get_enhanced_stats,
     get_scan_history,
     get_analyzed_news_for_dropdown,
+    get_analysis_comparison,
 )
 from github_scanner.github import scan_repo
 from pipeline import run_crawl_cycle, reanalyze_one
-from config import LEVEL_COLORS, THREAT_LEVELS, OLLAMA_BASE_URL, OLLAMA_MODEL
+from exporter.report_exporter import (
+    export_threat_csv, export_threat_jsonl, export_model_comparison_csv,
+)
+import config
+from config import (
+    LEVEL_COLORS, THREAT_LEVELS, OLLAMA_BASE_URL, OLLAMA_MODEL,
+)
 
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
@@ -190,7 +197,7 @@ def _cvss_badge(score) -> str:
 
 # ── News card renderer ─────────────────────────────────────────────────────────
 
-def render_news_card(item: dict) -> str:
+def render_news_card(item: dict, review_ids: frozenset = frozenset()) -> str:
     level  = item.get("threat_level", "INFO")
     color  = LEVEL_COLORS.get(level, "#888888")
     # Truncate the raw title BEFORE escaping — escaping first then slicing can cut
@@ -202,6 +209,21 @@ def render_news_card(item: dict) -> str:
     pub    = html.escape((item.get("published") or item.get("created_at", ""))[:10])
     meter  = _threat_meter(level)
     cvss   = _cvss_badge(item.get("cvss_score"))
+
+    # The news table holds the primary result; show which model produced it
+    # (local Ollama or the configured online API, per PRIMARY_PROVIDER).
+    _pp, _pm = config.primary_label()
+    provider_badge = (
+        f'<span style="font-size:10px;color:#888;background:#f2f2f2;'
+        f'padding:1px 6px;border-radius:4px">{html.escape(_pp)}/'
+        f'{html.escape(_pm)}</span>'
+    )
+    # When a second model disagrees on threat_level, flag for human review.
+    review_badge = (
+        '<span style="font-size:10px;color:white;background:#9C27B0;'
+        'padding:1px 7px;border-radius:10px;font-weight:700">⚖ 需要人工覆核</span>'
+        if item.get("id") in review_ids else ""
+    )
 
     cves: list = []
     try:
@@ -228,14 +250,20 @@ def render_news_card(item: dict) -> str:
                    font-size:11px;font-weight:700">{html.escape(level)}</span>
       {meter}{cvss}
     </div>
-    <span style="font-size:11px;color:#888">{source} · {pub}</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      {review_badge}
+      <span style="font-size:11px;color:#888">{source} · {pub}</span>
+    </div>
   </div>
   <a href="{url}" target="_blank"
      style="font-size:13px;font-weight:500;color:#1a1a1a;text-decoration:none">
     {title}
   </a>
   <div class="card-action" style="margin-top:6px;font-size:12px;color:#555">{action}</div>
-  {f'<div style="margin-top:5px">{cve_html}</div>' if cve_html else ''}
+  <div style="margin-top:5px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+    {f'<span>{cve_html}</span>' if cve_html else ''}
+    {provider_badge}
+  </div>
 </div>
 """
 
@@ -263,11 +291,25 @@ def build_news_html(
         msg = f"找不到符合條件的資料 — {hint}" if active else "尚無資料，請先點擊「立即爬取」"
         return f"<p style='color:#888;text-align:center;padding:40px'>{msg}</p>"
 
+    # News IDs where local and cloud disagree on threat_level → flag for review.
+    review_ids = _review_news_ids()
+
     count_bar = (
         f"<p style='font-size:12px;color:#888;margin-bottom:8px'>"
         f"共找到 <strong>{len(news)}</strong> 筆</p>"
     )
-    return count_bar + "".join(render_news_card(item) for item in news)
+    return count_bar + "".join(render_news_card(item, review_ids) for item in news)
+
+
+def _review_news_ids() -> frozenset:
+    """IDs where two providers analyzed the item but disagree on threat_level."""
+    try:
+        return frozenset(
+            e["news_id"] for e in get_analysis_comparison(limit=500)
+            if e.get("has_both") and not e.get("level_agree")
+        )
+    except Exception:
+        return frozenset()
 
 
 # ── Tab 1: re-analyze ─────────────────────────────────────────────────────────
@@ -291,6 +333,86 @@ def refresh_reanalyze_choices():
 def manual_crawl() -> str:
     _, msg = run_crawl_cycle()
     return msg
+
+
+# ── Export handlers ───────────────────────────────────────────────────────────
+
+def _do_export(fn, label: str) -> str:
+    try:
+        path = fn()
+        return f"✅ 已匯出{label}：<code>{html.escape(path)}</code>"
+    except Exception as e:
+        return f"❌ 匯出失敗：{html.escape(str(e))}"
+
+
+def do_export_csv() -> str:
+    return _do_export(export_threat_csv, "威脅情報 CSV")
+
+
+def do_export_jsonl() -> str:
+    return _do_export(export_threat_jsonl, "威脅情報 JSONL")
+
+
+def do_export_comparison() -> str:
+    return _do_export(export_model_comparison_csv, "雙模型比較 CSV")
+
+
+# ── Model comparison view ─────────────────────────────────────────────────────
+
+def build_comparison_html() -> str:
+    rows = [e for e in get_analysis_comparison(limit=200) if e.get("has_both")]
+    if not rows:
+        mode_hint = (
+            f"目前 ANALYSIS_MODE={config.ANALYSIS_MODE}（單模型），只有主要模型結果。"
+            "設定 ANALYSIS_MODE=compare 並提供 CLOUD_LLM_API_KEY 後，這裡會顯示雙模型比較。"
+            if config.ANALYSIS_MODE == "single" or not config.cloud_enabled()
+            else "尚無同時擁有本地與雲端分析的新聞，請先執行一次爬取。"
+        )
+        return f"<p style='color:#888;text-align:center;padding:30px'>{mode_hint}</p>"
+
+    disagree = sum(1 for e in rows if not e["level_agree"])
+    head = (
+        f"<p style='font-size:13px;margin-bottom:8px'>共 <strong>{len(rows)}</strong> 筆雙模型分析，"
+        f"其中 <strong style='color:#9C27B0'>{disagree}</strong> 筆等級不一致（需人工覆核）。</p>"
+    )
+
+    body = []
+    for e in rows:
+        local = e.get("local") or {}
+        cloud = e.get("cloud") or {}
+        ll, cl = local.get("threat_level", "—"), cloud.get("threat_level", "—")
+        agree = e["level_agree"]
+        edge = "#44BB44" if agree else "#9C27B0"
+        flag = ("一致" if agree else "⚖ 需人工覆核")
+        title = html.escape(str(e.get("title", ""))[:90])
+        url = _safe_url(e.get("url", "#"))
+        lc = LEVEL_COLORS.get(ll, "#888")
+        cc = LEVEL_COLORS.get(cl, "#888")
+
+        def chip(lbl, lvl, col, model, lat):
+            return (
+                f'<span style="font-size:11px;color:#888">{lbl}</span> '
+                f'<span style="background:{col};color:white;padding:1px 7px;border-radius:10px;'
+                f'font-size:11px;font-weight:700">{html.escape(str(lvl))}</span> '
+                f'<span style="font-size:10px;color:#aaa">{html.escape(str(model))}'
+                f'{f" · {lat}ms" if lat not in (None, "") else ""}</span>'
+            )
+
+        body.append(f"""
+<div class="scan-card" style="border-left:4px solid {edge};padding:10px 14px;margin-bottom:8px;
+     background:white;border-radius:0 8px 8px 0;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <a href="{url}" target="_blank" style="font-size:13px;font-weight:600;color:#1a1a1a;
+       text-decoration:none">{title}</a>
+    <span style="font-size:11px;color:{edge};font-weight:700">{flag}</span>
+  </div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap">
+    <div>{chip("本地", ll, lc, local.get("model",""), local.get("latency_ms",""))}</div>
+    <div>{chip("雲端", cl, cc, cloud.get("model",""), cloud.get("latency_ms",""))}</div>
+  </div>
+</div>""")
+
+    return head + "".join(body)
 
 
 # ── Tab 2: GitHub scan ────────────────────────────────────────────────────────
@@ -458,6 +580,16 @@ def get_status_html() -> str:
     last_crawl = stats["last_crawl"] or "（尚無記錄）"
 
     ollama_ok, ollama_msg = _check_ollama()
+    _pp, _pm = config.primary_label()
+
+    # Cloud provider config — show whether it's set up, never the key itself.
+    cloud_on = config.cloud_enabled()
+    cloud_msg = (
+        f"✅ 已設定 · {html.escape(config.CLOUD_LLM_PROVIDER)} / "
+        f"{html.escape(config.CLOUD_LLM_MODEL)}"
+        if cloud_on else
+        "⚪ 未設定（設定 CLOUD_LLM_API_KEY 與 CLOUD_LLM_MODEL 以啟用雲端模型）"
+    )
 
     # Threat level bar chart
     bars = ""
@@ -493,9 +625,13 @@ def get_status_html() -> str:
   </div>
   <div>
     <p style='font-weight:600;margin-bottom:8px'>⚙ 系統狀態</p>
-    <div style='padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;
+    <div style='padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:8px;
          background:{"#e8f5e9" if ollama_ok else "#fce4ec"}'>{ollama_msg}</div>
-    <p style='font-weight:600;margin-bottom:8px'>威脅等級分布</p>
+    <div style='padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:8px;
+         background:{"#e8f5e9" if cloud_on else "#f5f5f5"}'>雲端模型：{cloud_msg}</div>
+    {stat_row("主要分析模型 (PRIMARY_PROVIDER)", f"{html.escape(_pp)} / {html.escape(_pm)}", "#1f6feb")}
+    {stat_row("分析模式 (ANALYSIS_MODE)", html.escape(config.ANALYSIS_MODE), "#1f6feb")}
+    <p style='font-weight:600;margin:12px 0 8px'>威脅等級分布</p>
     {bars}
   </div>
 </div>
@@ -515,11 +651,11 @@ def create_app() -> gr.Blocks:
 
         # Header
         with gr.Row():
-            gr.Markdown(
-                "# 🛡 ThreatRadar\n"
-                "*Security News Threat Intelligence Dashboard*",
-                scale=5,
-            )
+            with gr.Column(scale=5):
+                gr.Markdown(
+                    "# 🛡 ThreatRadar\n"
+                    "*Security News Threat Intelligence Dashboard*"
+                )
             dark_btn = gr.Button("🌙 Dark Mode", scale=0, min_width=120)
 
         dark_btn.click(fn=None, js=DARK_TOGGLE_JS)
@@ -633,9 +769,30 @@ def create_app() -> gr.Blocks:
                 history_html    = gr.HTML(value=build_scan_history_html())
                 history_ref_btn.click(fn=build_scan_history_html, outputs=history_html)
 
-            # ══ Tab 4: System Status ══════════════════════════════════════════
+            # ══ Tab 4: Model Comparison & Export ══════════════════════════════
+            with gr.Tab("🔬 模型比較 / 匯出"):
+                gr.Markdown(
+                    "比較本地 (Ollama) 與雲端模型對同一篇新聞的威脅研判，"
+                    "並匯出威脅情報報表。匯出檔會寫入 `outputs/` 資料夾（不會 commit 到 Git）。"
+                )
+                with gr.Row():
+                    export_csv_btn  = gr.Button("⬇ 匯出威脅情報 CSV", variant="primary")
+                    export_jsonl_btn = gr.Button("⬇ 匯出威脅情報 JSONL")
+                    export_cmp_btn  = gr.Button("⬇ 匯出雙模型比較 CSV")
+                export_status = gr.HTML()
+
+                export_csv_btn.click(fn=do_export_csv, outputs=export_status)
+                export_jsonl_btn.click(fn=do_export_jsonl, outputs=export_status)
+                export_cmp_btn.click(fn=do_export_comparison, outputs=export_status)
+
+                gr.Markdown("---\n#### ⚖ 雙模型威脅等級比較")
+                cmp_ref_btn = gr.Button("🔄 重新整理比較")
+                cmp_html    = gr.HTML(value=build_comparison_html())
+                cmp_ref_btn.click(fn=build_comparison_html, outputs=cmp_html)
+
+            # ══ Tab 5: System Status ══════════════════════════════════════════
             with gr.Tab("📊 系統狀態"):
-                gr.Markdown("即時顯示資料庫統計、分析狀態與 Ollama 連線健康度。")
+                gr.Markdown("即時顯示資料庫統計、分析狀態、Ollama 連線與雲端模型設定。")
                 stats_ref_btn = gr.Button("🔄 刷新統計")
                 stats_html    = gr.HTML(value=get_status_html())
                 stats_ref_btn.click(fn=get_status_html, outputs=stats_html)
@@ -645,4 +802,4 @@ def create_app() -> gr.Blocks:
 
 def launch():
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    app.launch(server_name="0.0.0.0", server_port=7860, share=True)

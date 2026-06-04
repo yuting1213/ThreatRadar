@@ -36,3 +36,7 @@ handout_text.tmp
 
 # Evaluation run outputs (regenerated each run)
 eval/results/
+
+# User-generated report exports — keep the folder, ignore the files inside
+outputs/*
+!outputs/.gitkeep

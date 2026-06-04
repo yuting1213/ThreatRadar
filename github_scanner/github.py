@@ -3,33 +3,53 @@ Scan a GitHub repository for dependency files and match against
 CVE-affected products found in the news database.
 """
 
-import requests
 import json
 import re
 import xml.etree.ElementTree as ET
-from packaging.version import Version
-from packaging.specifiers import SpecifierSet
+
+import requests
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
+from config import GITHUB_TOKEN
 from database.db import get_recent_news, save_github_scan
+
 
 def extract_repo_path(repo_url: str) -> str:
     """
     Extract 'owner/repo' from various GitHub URL formats.
     e.g. https://github.com/owner/repo -> owner/repo
     """
-    match = re.search(r'github\.com/([^/]+/[^/]+?)(?:\.git|/|$)', repo_url)
+    match = re.search(r"github\.com/([^/]+/[^/]+?)(?:\.git|/|$)", repo_url)
     return match.group(1) if match else ""
 
 
 def fetch_file(repo_path: str, filename: str) -> str:
     """
     Fetch raw file content from GitHub.
-    Uses unauthenticated API (60 req/hour limit).
+
+    Unauthenticated the contents API allows 60 req/hr; setting GITHUB_TOKEN adds
+    an Authorization header and raises that to 5000 req/hr.
     """
     url = f"https://api.github.com/repos/{repo_path}/contents/{filename}"
-    resp = requests.get(url, headers={"Accept": "application/vnd.github.raw+json"}, timeout=10)
+    headers = {"Accept": "application/vnd.github.raw+json"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    resp = requests.get(url, headers=headers, timeout=10)
     if resp.status_code == 200:
         return resp.text
     return ""
+
+
+def clean_version(version: str) -> str:
+    if not version:
+        return ""
+
+    version = str(version).strip()
+    version = version.lstrip("^~=<>& ")
+    version = version.lstrip("v")
+
+    return version
 
 
 def parse_dependencies(repo_path: str) -> list[dict]:
@@ -52,7 +72,7 @@ def parse_dependencies(repo_path: str) -> list[dict]:
         for line in content.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                m = re.match(r'^([a-zA-Z0-9_\-\.]+)\s*([<>=!~]+)?\s*([\w\.\-\+]*)', line)
+                m = re.match(r"^([a-zA-Z0-9_\-\.]+)\s*([<>=!~]+)?\s*([\w\.\-\+]*)", line)
                 if m:
                     deps.append({
                         "name": m.group(1).lower(),
@@ -90,11 +110,7 @@ def parse_dependencies(repo_path: str) -> list[dict]:
                 version = dep.findtext(f"{ns}version")
 
                 if artifact_id:
-                    if group_id:
-                        name = f"{group_id}:{artifact_id}"
-                    else:
-                        name = artifact_id
-
+                    name = f"{group_id}:{artifact_id}" if group_id else artifact_id
                     deps.append({
                         "name": name.lower(),
                         "version": clean_version(version or ""),
@@ -238,6 +254,7 @@ def parse_dependencies(repo_path: str) -> list[dict]:
 
     return deps
 
+
 # Short or generic dep names cause noisy substring matches in the old
 # implementation (e.g. dep "go" matching product "google-cloud", dep "py"
 # matching "PyPy", etc.). They're never used as a primary match key.
@@ -246,12 +263,36 @@ SHORT_NAME_BLACKLIST = {
     "io", "ai", "ui", "db", "os", "core", "lib", "util",
 }
 
-_TOKEN_SPLIT = re.compile(r'[^a-z0-9]+')
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 
 
 def _tokenize(text: str) -> set[str]:
     """Lowercase + split on non-alphanumeric. Empty tokens dropped."""
     return {t for t in _TOKEN_SPLIT.split(text.lower()) if t}
+
+
+def is_version_affected(installed_version: str, affected_range: str) -> bool:
+    """
+    Return True when the installed version should be treated as affected.
+
+    Empty or unparsable ranges are treated as affected so scanner results stay
+    conservative when the LLM/news item does not provide a precise specifier.
+    """
+    if not installed_version or not affected_range:
+        return True
+
+    normalized = affected_range.strip()
+    if not normalized:
+        return True
+
+    # Some LLM outputs use a bare version. Interpret it as an exact match.
+    if not re.search(r"[<>=!~]", normalized):
+        normalized = f"=={normalized}"
+
+    try:
+        return Version(clean_version(installed_version)) in SpecifierSet(normalized)
+    except (InvalidSpecifier, InvalidVersion, ValueError):
+        return True
 
 
 def _find_dep_matches(dependencies: list[dict], news_items: list[dict]) -> list[dict]:
@@ -296,12 +337,21 @@ def _find_dep_matches(dependencies: list[dict], news_items: list[dict]) -> list[
 
         for candidate_name, dep in candidates.items():
             if candidate_name in product_tokens:
+                affected_range = item.get("affected_version_range", "")
+
+                if not is_version_affected(dep.get("version", ""), affected_range):
+                    continue
+
                 matches.append({
-                    "dep_name":       dep["name"],
-                    "news_title":     item["title"],
-                    "threat_level":   item.get("threat_level", "INFO"),
-                    "action_summary": item.get("action_summary", ""),
-                    "url":            item.get("url", ""),
+                    "dep_name":               dep["name"],
+                    "dep_version":            dep.get("version", ""),
+                    "ecosystem":              dep.get("ecosystem", ""),
+                    "source_file":            dep.get("source_file", ""),
+                    "news_title":             item["title"],
+                    "threat_level":           item.get("threat_level", "INFO"),
+                    "affected_version_range": affected_range,
+                    "action_summary":         item.get("action_summary", ""),
+                    "url":                    item.get("url", ""),
                 })
                 break  # one match per news item
 
@@ -338,7 +388,7 @@ def scan_repo(repo_url: str) -> dict:
                 "repo_url": repo_url,
                 "deps_found": 0,
                 "matches": [],
-                "error": "找不到依賴檔案（requirements.txt 或 package.json）",
+                "error": "找不到依賴檔案（requirements.txt、package.json、pom.xml、go.mod、Cargo.toml、Pipfile.lock 或 poetry.lock）",
             }
 
         matches = match_against_news(deps)

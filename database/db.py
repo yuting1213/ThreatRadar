@@ -39,6 +39,27 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     nvd_new  INTEGER DEFAULT 0,
     analyzed INTEGER DEFAULT 0
 );
+
+-- Per-(news, provider) analysis history. The news table keeps ONE "primary"
+-- result for the dashboard's default view; this table keeps every model's full
+-- output so two providers never overwrite each other and can be compared.
+CREATE TABLE IF NOT EXISTS news_analyses (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    news_id           INTEGER NOT NULL,
+    provider          TEXT NOT NULL,
+    model             TEXT NOT NULL,
+    prompt_version    TEXT,
+    threat_level      TEXT,
+    cve_ids           TEXT,
+    affected_products TEXT,
+    action_summary    TEXT,
+    latency_ms        INTEGER,
+    status            TEXT,
+    error             TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_news_analyses_news ON news_analyses(news_id);
+CREATE INDEX IF NOT EXISTS idx_news_analyses_provider ON news_analyses(news_id, provider);
 """
 
 ORDER_BY_LEVEL = """
@@ -335,3 +356,96 @@ def record_crawl_run(rss_new: int = 0, nvd_new: int = 0, analyzed: int = 0) -> N
             (rss_new, nvd_new, analyzed),
         )
         conn.commit()
+
+
+# -- Multi-provider analysis history (news_analyses) -----------------------------
+
+def save_news_analysis(
+    news_id: int,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    threat_level: str | None,
+    cve_ids: str,
+    affected_products: str,
+    action_summary: str,
+    latency_ms: int | None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO news_analyses "
+            "(news_id, provider, model, prompt_version, threat_level, cve_ids, "
+            " affected_products, action_summary, latency_ms, status, error) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (news_id, provider, model, prompt_version, threat_level, cve_ids,
+             affected_products, action_summary, latency_ms, status, error),
+        )
+        conn.commit()
+
+
+def get_news_analyses(news_id: int) -> list[dict]:
+    """Return every analysis row for one news item, newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM news_analyses WHERE news_id=? ORDER BY created_at DESC",
+            (news_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_latest_news_analysis(news_id: int, provider: str) -> dict | None:
+    """Return the most recent analysis for (news_id, provider), or None."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM news_analyses WHERE news_id=? AND provider=? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (news_id, provider),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def get_analysis_comparison(limit: int = 100) -> list[dict]:
+    
+    from config import LOCAL_PROVIDER
+
+    with _connect() as conn:
+        # Newest analysis per (news_id, provider) via a correlated max(created_at).
+        rows = conn.execute(
+            """
+            SELECT na.news_id, na.provider, na.model, na.threat_level,
+                   na.cve_ids, na.affected_products, na.latency_ms, na.status,
+                   n.title, n.url
+            FROM news_analyses na
+            JOIN news n ON n.id = na.news_id
+            WHERE na.created_at = (
+                SELECT MAX(created_at) FROM news_analyses na2
+                WHERE na2.news_id = na.news_id AND na2.provider = na.provider
+            )
+            ORDER BY na.news_id DESC
+            """
+        ).fetchall()
+
+    by_news: dict[int, dict] = {}
+    for r in rows:
+        d = dict(r)
+        entry = by_news.setdefault(d["news_id"], {
+            "news_id": d["news_id"], "title": d["title"], "url": d["url"],
+            "local": None, "cloud": None,
+        })
+        slot = "local" if d["provider"] == LOCAL_PROVIDER else "cloud"
+        entry[slot] = d
+
+    result = []
+    for entry in by_news.values():
+        local = entry["local"]
+        cloud = entry["cloud"]
+        ll = local["threat_level"] if local else None
+        cl = cloud["threat_level"] if cloud else None
+        entry["level_agree"] = bool(ll and cl and ll == cl)
+        entry["has_both"] = bool(local and cloud)
+        result.append(entry)
+
+    return result[:limit]
