@@ -3,18 +3,24 @@ Scan a GitHub repository for dependency files and match against
 CVE-affected products found in the news database.
 """
 
-import requests
 import json
 import re
-from database.db import get_recent_news, save_github_scan
+import xml.etree.ElementTree as ET
+
+import requests
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
+
 from config import GITHUB_TOKEN
+from database.db import get_recent_news, save_github_scan
+
 
 def extract_repo_path(repo_url: str) -> str:
     """
     Extract 'owner/repo' from various GitHub URL formats.
     e.g. https://github.com/owner/repo -> owner/repo
     """
-    match = re.search(r'github\.com/([^/]+/[^/]+?)(?:\.git|/|$)', repo_url)
+    match = re.search(r"github\.com/([^/]+/[^/]+?)(?:\.git|/|$)", repo_url)
     return match.group(1) if match else ""
 
 
@@ -35,38 +41,216 @@ def fetch_file(repo_path: str, filename: str) -> str:
     return ""
 
 
+def clean_version(version: str) -> str:
+    if not version:
+        return ""
+
+    version = str(version).strip()
+    version = version.lstrip("^~=<>& ")
+    version = version.lstrip("v")
+
+    return version
+
+
 def parse_dependencies(repo_path: str) -> list[dict]:
     """
-    Fetch and parse the dependency files we currently support:
-    - requirements.txt (Python)
-    - package.json (Node.js)
+    Try to fetch and parse dependency files:
+    - requirements.txt Python
+    - package.json Node.js
+    - pom.xml Java Maven
+    - go.mod Go
+    - Cargo.toml Rust
+    - Pipfile.lock Python
+    - poetry.lock Python
 
-    (pom.xml / go.mod / Cargo.toml are not implemented yet — see TASKS.md.)
-    Return list of {"name": str, "version": str} dicts.
+    Return list of {"name": str, "version": str, "ecosystem": str, "source_file": str} dicts.
     """
     deps = []
 
-    # requirements.txt
     content = fetch_file(repo_path, "requirements.txt")
     if content:
         for line in content.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                # Handle: package==1.0, package>=1.0, package
-                m = re.match(r'^([a-zA-Z0-9_\-\.]+)\s*[><=!]*([\d\.]*)', line)
+                m = re.match(r"^([a-zA-Z0-9_\-\.]+)\s*([<>=!~]+)?\s*([\w\.\-\+]*)", line)
                 if m:
-                    deps.append({"name": m.group(1).lower(), "version": m.group(2)})
+                    deps.append({
+                        "name": m.group(1).lower(),
+                        "version": clean_version(m.group(3)),
+                        "ecosystem": "pypi",
+                        "source_file": "requirements.txt",
+                    })
 
-    # package.json
     content = fetch_file(repo_path, "package.json")
     if content:
         try:
             pkg = json.loads(content)
             for section in ["dependencies", "devDependencies"]:
                 for name, version in pkg.get(section, {}).items():
-                    deps.append({"name": name.lower(), "version": version.lstrip("^~>=")})
+                    deps.append({
+                        "name": name.lower(),
+                        "version": clean_version(version),
+                        "ecosystem": "npm",
+                        "source_file": "package.json",
+                    })
         except Exception:
             pass
+
+    content = fetch_file(repo_path, "pom.xml")
+    if content:
+        try:
+            root = ET.fromstring(content)
+            ns = ""
+            if root.tag.startswith("{"):
+                ns = root.tag.split("}")[0] + "}"
+
+            for dep in root.findall(f".//{ns}dependency"):
+                group_id = dep.findtext(f"{ns}groupId")
+                artifact_id = dep.findtext(f"{ns}artifactId")
+                version = dep.findtext(f"{ns}version")
+
+                if artifact_id:
+                    name = f"{group_id}:{artifact_id}" if group_id else artifact_id
+                    deps.append({
+                        "name": name.lower(),
+                        "version": clean_version(version or ""),
+                        "ecosystem": "maven",
+                        "source_file": "pom.xml",
+                    })
+        except Exception:
+            pass
+
+    content = fetch_file(repo_path, "go.mod")
+    if content:
+        in_require_block = False
+
+        for line in content.splitlines():
+            line = line.strip()
+
+            if not line or line.startswith("//"):
+                continue
+
+            if line.startswith("require ("):
+                in_require_block = True
+                continue
+
+            if in_require_block and line == ")":
+                in_require_block = False
+                continue
+
+            if line.startswith("require "):
+                parts = line.replace("require ", "", 1).split()
+                if len(parts) >= 2:
+                    deps.append({
+                        "name": parts[0].lower(),
+                        "version": clean_version(parts[1]),
+                        "ecosystem": "go",
+                        "source_file": "go.mod",
+                    })
+
+            elif in_require_block:
+                parts = line.split()
+                if len(parts) >= 2:
+                    deps.append({
+                        "name": parts[0].lower(),
+                        "version": clean_version(parts[1]),
+                        "ecosystem": "go",
+                        "source_file": "go.mod",
+                    })
+
+    content = fetch_file(repo_path, "Cargo.toml")
+    if content:
+        in_dependencies = False
+
+        for line in content.splitlines():
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            if line.startswith("[dependencies]"):
+                in_dependencies = True
+                continue
+
+            if line.startswith("[") and line != "[dependencies]":
+                in_dependencies = False
+                continue
+
+            if in_dependencies and "=" in line:
+                name, value = line.split("=", 1)
+                name = name.strip().strip('"').lower()
+                value = value.strip()
+
+                version = ""
+
+                m1 = re.search(r'"([^"]+)"', value)
+                if m1:
+                    version = m1.group(1)
+
+                m2 = re.search(r'version\s*=\s*"([^"]+)"', value)
+                if m2:
+                    version = m2.group(1)
+
+                if name:
+                    deps.append({
+                        "name": name,
+                        "version": clean_version(version),
+                        "ecosystem": "cargo",
+                        "source_file": "Cargo.toml",
+                    })
+
+    content = fetch_file(repo_path, "Pipfile.lock")
+    if content:
+        try:
+            lock = json.loads(content)
+            for section in ["default", "develop"]:
+                for name, info in lock.get(section, {}).items():
+                    version = ""
+                    if isinstance(info, dict):
+                        version = info.get("version", "")
+
+                    deps.append({
+                        "name": name.lower(),
+                        "version": clean_version(version),
+                        "ecosystem": "pypi",
+                        "source_file": "Pipfile.lock",
+                    })
+        except Exception:
+            pass
+
+    content = fetch_file(repo_path, "poetry.lock")
+    if content:
+        current_name = ""
+        current_version = ""
+
+        for line in content.splitlines():
+            line = line.strip()
+
+            if line == "[[package]]":
+                if current_name:
+                    deps.append({
+                        "name": current_name.lower(),
+                        "version": clean_version(current_version),
+                        "ecosystem": "pypi",
+                        "source_file": "poetry.lock",
+                    })
+
+                current_name = ""
+                current_version = ""
+
+            elif line.startswith("name ="):
+                current_name = line.split("=", 1)[1].strip().strip('"')
+
+            elif line.startswith("version ="):
+                current_version = line.split("=", 1)[1].strip().strip('"')
+
+        if current_name:
+            deps.append({
+                "name": current_name.lower(),
+                "version": clean_version(current_version),
+                "ecosystem": "pypi",
+                "source_file": "poetry.lock",
+            })
 
     return deps
 
@@ -79,12 +263,36 @@ SHORT_NAME_BLACKLIST = {
     "io", "ai", "ui", "db", "os", "core", "lib", "util",
 }
 
-_TOKEN_SPLIT = re.compile(r'[^a-z0-9]+')
+_TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 
 
 def _tokenize(text: str) -> set[str]:
     """Lowercase + split on non-alphanumeric. Empty tokens dropped."""
     return {t for t in _TOKEN_SPLIT.split(text.lower()) if t}
+
+
+def is_version_affected(installed_version: str, affected_range: str) -> bool:
+    """
+    Return True when the installed version should be treated as affected.
+
+    Empty or unparsable ranges are treated as affected so scanner results stay
+    conservative when the LLM/news item does not provide a precise specifier.
+    """
+    if not installed_version or not affected_range:
+        return True
+
+    normalized = affected_range.strip()
+    if not normalized:
+        return True
+
+    # Some LLM outputs use a bare version. Interpret it as an exact match.
+    if not re.search(r"[<>=!~]", normalized):
+        normalized = f"=={normalized}"
+
+    try:
+        return Version(clean_version(installed_version)) in SpecifierSet(normalized)
+    except (InvalidSpecifier, InvalidVersion, ValueError):
+        return True
 
 
 def _find_dep_matches(dependencies: list[dict], news_items: list[dict]) -> list[dict]:
@@ -129,12 +337,21 @@ def _find_dep_matches(dependencies: list[dict], news_items: list[dict]) -> list[
 
         for candidate_name, dep in candidates.items():
             if candidate_name in product_tokens:
+                affected_range = item.get("affected_version_range", "")
+
+                if not is_version_affected(dep.get("version", ""), affected_range):
+                    continue
+
                 matches.append({
-                    "dep_name":       dep["name"],
-                    "news_title":     item["title"],
-                    "threat_level":   item.get("threat_level", "INFO"),
-                    "action_summary": item.get("action_summary", ""),
-                    "url":            item.get("url", ""),
+                    "dep_name":               dep["name"],
+                    "dep_version":            dep.get("version", ""),
+                    "ecosystem":              dep.get("ecosystem", ""),
+                    "source_file":            dep.get("source_file", ""),
+                    "news_title":             item["title"],
+                    "threat_level":           item.get("threat_level", "INFO"),
+                    "affected_version_range": affected_range,
+                    "action_summary":         item.get("action_summary", ""),
+                    "url":                    item.get("url", ""),
                 })
                 break  # one match per news item
 
@@ -171,7 +388,7 @@ def scan_repo(repo_url: str) -> dict:
                 "repo_url": repo_url,
                 "deps_found": 0,
                 "matches": [],
-                "error": "找不到依賴檔案（requirements.txt 或 package.json）",
+                "error": "找不到依賴檔案（requirements.txt、package.json、pom.xml、go.mod、Cargo.toml、Pipfile.lock 或 poetry.lock）",
             }
 
         matches = match_against_news(deps)
