@@ -1,6 +1,6 @@
 import pytest
-from github_scanner.scanner import _tokenize, _find_dep_matches
-
+#from github_scanner.scanner import _tokenize, _find_dep_matches
+from github_scanner.github import _tokenize, _find_dep_matches
 def test_tokenize():
     # basic & edge cases
     assert _tokenize("React 18 Critical Vuln") == {"react", "18", "critical", "vuln"}
