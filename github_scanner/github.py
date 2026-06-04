@@ -6,10 +6,8 @@ CVE-affected products found in the news database.
 import requests
 import json
 import re
-import xml.etree.ElementTree as ET
-from packaging.version import Version
-from packaging.specifiers import SpecifierSet
 from database.db import get_recent_news, save_github_scan
+from config import GITHUB_TOKEN
 
 def extract_repo_path(repo_url: str) -> str:
     """
@@ -23,10 +21,15 @@ def extract_repo_path(repo_url: str) -> str:
 def fetch_file(repo_path: str, filename: str) -> str:
     """
     Fetch raw file content from GitHub.
-    Uses unauthenticated API (60 req/hour limit).
+
+    Unauthenticated the contents API allows 60 req/hr; setting GITHUB_TOKEN adds
+    an Authorization header and raises that to 5000 req/hr.
     """
     url = f"https://api.github.com/repos/{repo_path}/contents/{filename}"
-    resp = requests.get(url, headers={"Accept": "application/vnd.github.raw+json"}, timeout=10)
+    headers = {"Accept": "application/vnd.github.raw+json"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    resp = requests.get(url, headers=headers, timeout=10)
     if resp.status_code == 200:
         return resp.text
     return ""
@@ -34,12 +37,11 @@ def fetch_file(repo_path: str, filename: str) -> str:
 
 def parse_dependencies(repo_path: str) -> list[dict]:
     """
-    Try to fetch and parse these dependency files:
+    Fetch and parse the dependency files we currently support:
     - requirements.txt (Python)
     - package.json (Node.js)
-    - pom.xml (Java, basic)
-    - go.mod (Go, basic)
 
+    (pom.xml / go.mod / Cargo.toml are not implemented yet — see TASKS.md.)
     Return list of {"name": str, "version": str} dicts.
     """
     deps = []

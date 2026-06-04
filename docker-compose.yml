@@ -12,6 +12,17 @@ services:
       # Point to the ollama service by its Docker service name, not localhost
       - OLLAMA_BASE_URL=http://ollama:11434
       - OLLAMA_MODEL=llama3.2
+      # Pass secrets/config through from the host .env (never bake keys into the image).
+      - PRIMARY_PROVIDER=${PRIMARY_PROVIDER:-local}
+      - ANALYSIS_MODE=${ANALYSIS_MODE:-single}
+      - CLOUD_LLM_PROVIDER=${CLOUD_LLM_PROVIDER:-openai-compatible}
+      - CLOUD_LLM_BASE_URL=${CLOUD_LLM_BASE_URL:-https://api.openai.com/v1}
+      - CLOUD_LLM_MODEL=${CLOUD_LLM_MODEL:-}
+      - CLOUD_LLM_API_KEY=${CLOUD_LLM_API_KEY:-}
+      - PROMPT_VERSION=${PROMPT_VERSION:-v1}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - NVD_MAX_PAGES=${NVD_MAX_PAGES:-5}
     depends_on:
       - ollama
 
