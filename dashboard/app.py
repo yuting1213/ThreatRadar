@@ -357,6 +357,15 @@ def do_export_comparison() -> str:
     return _do_export(export_model_comparison_csv, "雙模型比較 CSV")
 
 
+def do_generate_briefing() -> str:
+    try:
+        from reporting.briefing import generate_briefing
+        path = generate_briefing()
+        return f"✅ 已產生威脅簡報（HTML，可直接開啟）：<code>{html.escape(str(path))}</code>"
+    except Exception as e:
+        return f"❌ 產生失敗：{html.escape(str(e))}"
+
+
 # ── Model comparison view ─────────────────────────────────────────────────────
 
 def build_comparison_html() -> str:
@@ -779,11 +788,13 @@ def create_app() -> gr.Blocks:
                     export_csv_btn  = gr.Button("⬇ 匯出威脅情報 CSV", variant="primary")
                     export_jsonl_btn = gr.Button("⬇ 匯出威脅情報 JSONL")
                     export_cmp_btn  = gr.Button("⬇ 匯出雙模型比較 CSV")
+                    briefing_btn    = gr.Button("🛡 產生威脅簡報 (HTML)", variant="primary")
                 export_status = gr.HTML()
 
                 export_csv_btn.click(fn=do_export_csv, outputs=export_status)
                 export_jsonl_btn.click(fn=do_export_jsonl, outputs=export_status)
                 export_cmp_btn.click(fn=do_export_comparison, outputs=export_status)
+                briefing_btn.click(fn=do_generate_briefing, outputs=export_status)
 
                 gr.Markdown("---\n#### ⚖ 雙模型威脅等級比較")
                 cmp_ref_btn = gr.Button("🔄 重新整理比較")

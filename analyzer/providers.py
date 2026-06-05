@@ -73,18 +73,19 @@ class AnalysisProvider(abc.ABC):
             return self._base_result("error", latency_ms=latency, error=f"{type(e).__name__}: {e}")
 
 
-def make_provider(kind: str) -> AnalysisProvider:
+def make_provider(kind: str, **kwargs) -> AnalysisProvider:
     """Factory. kind is config.LOCAL_PROVIDER ("ollama") or "cloud".
 
     Concrete classes are imported lazily so this module has no hard import of
-    the adapters (and no import cycle through analyzer.llm).
+    the adapters (and no import cycle through analyzer.llm). Extra kwargs
+    (model/base_url/api_key/...) are forwarded to the adapter constructor.
     """
     from config import LOCAL_PROVIDER
 
     if kind == LOCAL_PROVIDER or kind == "ollama":
         from analyzer.ollama_provider import OllamaProvider
-        return OllamaProvider()
+        return OllamaProvider(**kwargs)
     if kind == "cloud":
         from analyzer.cloud_provider import CloudProvider
-        return CloudProvider()
+        return CloudProvider(**kwargs)
     raise ValueError(f"unknown provider kind: {kind!r}")

@@ -8,21 +8,26 @@ from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT, LOCAL_PROVIDER
 
 
 class OllamaProvider(AnalysisProvider):
-    def __init__(self):
+    def __init__(self, model: str | None = None, base_url: str | None = None,
+                 timeout: int | None = None):
+        # Args default to config but can be overridden (e.g. by the benchmark
+        # harness to evaluate several local models in one run).
         self.provider = LOCAL_PROVIDER
-        self.model = OLLAMA_MODEL
+        self.model = model or OLLAMA_MODEL
+        self.base_url = base_url or OLLAMA_BASE_URL
+        self.timeout = timeout or OLLAMA_TIMEOUT
 
     def _call(self, prompt: str) -> str:
         resp = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
+            f"{self.base_url}/api/chat",
             json={
-                "model": OLLAMA_MODEL,
+                "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",  # Ollama constrains output to valid JSON
                 "options": {"num_predict": 300, "temperature": 0.1},
             },
-            timeout=OLLAMA_TIMEOUT,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()["message"]["content"]

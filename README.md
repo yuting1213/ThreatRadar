@@ -86,6 +86,37 @@ Runtime config is read from environment variables (see `.env.example`); `config.
 | `LLM_CONCURRENCY` | 3 | 同時跑幾個 LLM 分析 worker（Ollama 開 `OLLAMA_NUM_PARALLEL` 才有完整效益） |
 | `DB_PATH` | `threat_radar.db` | SQLite 檔案位置（WAL 模式） |
 
+## Evaluation, prioritization & briefing
+
+**Model benchmark** (`eval/benchmark.py`) — scores each provider (local Ollama and
+cloud DeepSeek/Qwen/OpenAI) on the hand-labeled gold set in `eval/dataset.jsonl`,
+through the same provider layer the app uses. Metrics: per-class F1, macro-F1,
+confusion matrix, Cohen's kappa, CVE-F1, product recall, latency. Outputs a
+`benchmark_*.csv` and a self-contained `benchmark_*.html` (inline SVG charts) to
+`eval/results/`.
+
+```
+python eval/benchmark.py            # local; add CLOUD_LLM_* to include a cloud model
+```
+
+**Priority enrichment** (`enrichment/`) — for each analyzed item, looks up whether
+its CVEs are on the CISA KEV catalog and their EPSS exploit-probabilities, then
+combines `threat_level + CVSS + EPSS + KEV` into a 0–100 composite priority score
+(`enrichment/priority.py`). Runs automatically after each crawl; the radar can be
+sorted by priority and KEV-flagged items are surfaced.
+
+**Threat briefing** (`reporting/briefing.py`) — one-click self-contained HTML
+briefing (KPIs, threat-level + priority distributions, highest-priority items,
+KEV hits, top products/CVEs) written to `outputs/`. Generate it from the
+"模型比較 / 匯出" dashboard tab or:
+
+```
+python -m reporting.briefing
+```
+
+All charts are zero-dependency inline SVG (`reporting/charts_svg.py`) — reports
+open in any browser with no extra packages.
+
 ## Development
 
 架構與設計決策詳見 [CLAUDE.md](CLAUDE.md)。團隊分工請看 [TASKS.md](TASKS.md)。
