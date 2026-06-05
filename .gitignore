@@ -31,8 +31,11 @@ Thumbs.db
 
 # Personal reports (each member writes their own — keep out of shared repo)
 report/
+report_outputs/
 *.docx
 handout_text.tmp
+# Individual-report generator scripts also live with each member, not the team repo
+scripts/generate_*report*.py
 
 # Evaluation run outputs (regenerated each run)
 eval/results/
