@@ -8,6 +8,7 @@ LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 BACKUP_COUNT = 3
 
+
 def setup_logger(name: str) -> logging.Logger:
     """
     Configures and returns a logger instance with rotating file and console handlers.
