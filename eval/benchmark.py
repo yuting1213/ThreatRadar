@@ -153,6 +153,12 @@ def build_html_report(results: list[dict], gold_n: int) -> str:
         cms += (f'<div class="cmcard"><div class="cmh">{r["label"]}</div>'
                 f'{C.heatmap(matrix, LEVEL_ORDER, LEVEL_ORDER, title=None)}</div>')
 
+    support = {}
+    if results:
+        pc = results[0]["metrics"]["per_class"]
+        support = {lv: pc[lv]["support"] for lv in LEVEL_ORDER}
+    support_line = "、".join(f"{lv} {support.get(lv,0)}" for lv in LEVEL_ORDER)
+
     return f"""<!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <title>ThreatRadar 模型評估報告 {stamp}</title>
@@ -174,7 +180,7 @@ def build_html_report(results: list[dict], gold_n: int) -> str:
 
 <h2>總覽</h2>
 <table><thead>{head}</thead><tbody>{body}</tbody></table>
-<p class="note">等級 exact＝威脅等級完全正確比例；±1＝相差一級內；κ＝Cohen's kappa（&gt;0.6 算不錯）。</p>
+<p class="note">等級 exact＝威脅等級完全正確比例；±1＝相差一級內；κ＝Cohen's kappa（&gt;0.6 算不錯）。<br>gold set 每類題數 (support)：{support_line}（小樣本，per-class F1 變異較大）。</p>
 
 <h2>品質 vs 成本</h2>
 <div class="grid2"><div>{f1_bar}</div><div>{lat_bar}</div></div>
@@ -205,9 +211,18 @@ def run_benchmark(specs=None, gold_path=DATASET, out_dir=RESULTS_DIR, max_items=
         raise SystemExit(f"No gold items in {gold_path}")
     results = []
     for spec in specs:
-        print(f"=== {spec['label']} ===")
         provider = provider_factory(spec["kind"], **spec.get("kwargs", {}))
+        chk = getattr(provider, "_configured", None)
+        if chk is not None and not chk():
+            print(f"=== {spec['label']} === [skip: provider not configured "
+                  f"(set CLOUD_LLM_API_KEY/CLOUD_LLM_MODEL)]")
+            continue
+        print(f"=== {spec['label']} ===")
         results.append(evaluate_provider(spec["label"], provider, gold, max_items))
+
+    if not results:
+        raise SystemExit("No configured providers to benchmark. "
+                         "Set up Ollama and/or CLOUD_LLM_* and edit BENCHMARK_PROVIDERS.")
     csv_path, html_path = write_outputs(results, len(gold[:max_items or len(gold)]), out_dir)
     print(f"\nWrote {csv_path}\nWrote {html_path}")
     return {"results": results, "csv": csv_path, "html": html_path}

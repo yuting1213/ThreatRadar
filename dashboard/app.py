@@ -26,6 +26,7 @@ from database.db import (
     get_scan_history,
     get_analyzed_news_for_dropdown,
     get_analysis_comparison,
+    get_priority_stats,
 )
 from github_scanner.github import scan_repo
 from pipeline import run_crawl_cycle, reanalyze_one
@@ -144,6 +145,7 @@ _SORT_MAP = {
     "發布時間":      "published",
     "來源":          "source",
     "CVSS 分數":     "cvss_score",
+    "優先級":        "priority",
 }
 _LEVEL_ORDER = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
 
@@ -224,6 +226,20 @@ def render_news_card(item: dict, review_ids: frozenset = frozenset()) -> str:
         'padding:1px 7px;border-radius:10px;font-weight:700">⚖ 需要人工覆核</span>'
         if item.get("id") in review_ids else ""
     )
+    # KEV + composite priority (from enrichment). Only shown once enriched.
+    _band_colors = {"CRITICAL": "#E24B4A", "HIGH": "#D85A30", "MEDIUM": "#EF9F27", "LOW": "#639922"}
+    _prio = item.get("priority_score")
+    priority_badge = (
+        f'<span title="綜合優先級 0-100（威脅等級+CVSS+EPSS+KEV）" style="background:'
+        f'{_band_colors.get(item.get("priority_band"), "#888")};color:#fff;padding:1px 7px;'
+        f'border-radius:10px;font-size:11px;font-weight:700">P{_prio:.0f}</span>'
+        if _prio is not None else ""
+    )
+    kev_badge = (
+        '<span title="CISA KEV：確認遭利用" style="background:#9C27B0;color:#fff;'
+        'padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700">🔥 KEV</span>'
+        if item.get("kev_hit") else ""
+    )
 
     cves: list = []
     try:
@@ -248,7 +264,7 @@ def render_news_card(item: dict, review_ids: frozenset = frozenset()) -> str:
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
       <span style="background:{color};color:white;padding:2px 9px;border-radius:12px;
                    font-size:11px;font-weight:700">{html.escape(level)}</span>
-      {meter}{cvss}
+      {meter}{cvss}{kev_badge}{priority_badge}
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       {review_badge}
@@ -593,6 +609,7 @@ def get_status_html() -> str:
 
     # Cloud provider config — show whether it's set up, never the key itself.
     cloud_on = config.cloud_enabled()
+    pstats = get_priority_stats()
     cloud_msg = (
         f"✅ 已設定 · {html.escape(config.CLOUD_LLM_PROVIDER)} / "
         f"{html.escape(config.CLOUD_LLM_MODEL)}"
@@ -640,6 +657,8 @@ def get_status_html() -> str:
          background:{"#e8f5e9" if cloud_on else "#f5f5f5"}'>雲端模型：{cloud_msg}</div>
     {stat_row("主要分析模型 (PRIMARY_PROVIDER)", f"{html.escape(_pp)} / {html.escape(_pm)}", "#1f6feb")}
     {stat_row("分析模式 (ANALYSIS_MODE)", html.escape(config.ANALYSIS_MODE), "#1f6feb")}
+    {stat_row("🔥 CISA KEV 命中", pstats.get("kev_hits", 0), "#9C27B0")}
+    {stat_row("已優先級排序", pstats.get("enriched", 0), "#1f6feb")}
     <p style='font-weight:600;margin:12px 0 8px'>威脅等級分布</p>
     {bars}
   </div>
