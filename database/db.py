@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS news (
     action_summary   TEXT,
     analysis_done    INTEGER DEFAULT 0,
     analysis_retries INTEGER DEFAULT 0,
+    kev_hit          INTEGER DEFAULT 0,
+    epss_score       REAL,
+    priority_score   REAL,
+    priority_band    TEXT,
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -109,6 +113,17 @@ def init_db() -> None:
             conn.execute("ALTER TABLE news ADD COLUMN cvss_score REAL")
         except sqlite3.OperationalError:
             pass
+        # KEV/EPSS/priority enrichment columns (added together).
+        for _col, _ddl in (
+            ("kev_hit", "ALTER TABLE news ADD COLUMN kev_hit INTEGER DEFAULT 0"),
+            ("epss_score", "ALTER TABLE news ADD COLUMN epss_score REAL"),
+            ("priority_score", "ALTER TABLE news ADD COLUMN priority_score REAL"),
+            ("priority_band", "ALTER TABLE news ADD COLUMN priority_band TEXT"),
+        ):
+            try:
+                conn.execute(_ddl)
+            except sqlite3.OperationalError:
+                pass
         conn.commit()
 
 
@@ -189,7 +204,7 @@ def get_recent_news(
 ) -> list[dict]:
     """Return recent analyzed news with optional filter, full-text search, and sort.
 
-    sort_by: "threat_level" | "published" | "source" | "cvss_score"
+    sort_by: "threat_level" | "published" | "source" | "cvss_score" | "priority"
     search_query: LIKE match on title, cve_ids, action_summary, affected_products.
     cve_only: if True, only return items that have at least one CVE.
     """
@@ -197,6 +212,7 @@ def get_recent_news(
         "published":   "ORDER BY published DESC, created_at DESC",
         "source":      "ORDER BY source ASC, created_at DESC",
         "cvss_score":  "ORDER BY cvss_score DESC, created_at DESC",
+        "priority":    "ORDER BY priority_score DESC, created_at DESC",
         "threat_level": ORDER_BY_LEVEL,
     }
     order = _SORT_CLAUSES.get(sort_by, ORDER_BY_LEVEL)
@@ -322,7 +338,8 @@ def reset_analysis(news_id: int) -> None:
     """Reset a news item so it gets re-processed on the next crawl cycle."""
     with _connect() as conn:
         conn.execute(
-            "UPDATE news SET analysis_done=0, analysis_retries=0 WHERE id=?",
+            "UPDATE news SET analysis_done=0, analysis_retries=0, "
+            "priority_score=NULL, priority_band=NULL, kev_hit=0, epss_score=NULL WHERE id=?",
             (news_id,),
         )
         conn.commit()
@@ -449,3 +466,101 @@ def get_analysis_comparison(limit: int = 100) -> list[dict]:
         result.append(entry)
 
     return result[:limit]
+
+
+# -- KEV/EPSS/priority enrichment ------------------------------------------------
+
+def get_unenriched_news(limit: int = 500) -> list[dict]:
+    """Analyzed items that don't yet have a priority score, newest first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, threat_level, cvss_score, cve_ids FROM news "
+            "WHERE analysis_done = 1 AND priority_score IS NULL "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def update_enrichment(news_id: int, kev_hit: bool, epss_score, priority_score,
+                      priority_band: str) -> None:
+    """Store KEV/EPSS/priority results for one news item."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE news SET kev_hit=?, epss_score=?, priority_score=?, priority_band=? "
+            "WHERE id=?",
+            (1 if kev_hit else 0, epss_score, priority_score, priority_band, news_id),
+        )
+        conn.commit()
+
+
+def get_priority_stats() -> dict:
+    """Counts for the priority/KEV dashboard widgets."""
+    with _connect() as conn:
+        bands = {r["priority_band"] or "—": r["n"] for r in conn.execute(
+            "SELECT priority_band, COUNT(*) n FROM news "
+            "WHERE priority_score IS NOT NULL GROUP BY priority_band"
+        ).fetchall()}
+        kev = conn.execute("SELECT COUNT(*) n FROM news WHERE kev_hit=1").fetchone()["n"]
+        enriched = conn.execute(
+            "SELECT COUNT(*) n FROM news WHERE priority_score IS NOT NULL"
+        ).fetchone()["n"]
+        return {"by_band": bands, "kev_hits": kev, "enriched": enriched}
+
+
+# -- Analytics reads (for briefing + analytics dashboard) ------------------------
+
+def get_source_breakdown() -> dict:
+    """{source: count} over analyzed news."""
+    with _connect() as conn:
+        return {r["source"]: r["n"] for r in conn.execute(
+            "SELECT source, COUNT(*) n FROM news WHERE analysis_done=1 "
+            "GROUP BY source ORDER BY n DESC"
+        ).fetchall()}
+
+
+def get_cvss_distribution() -> dict:
+    """Bucketed CVSS counts for a histogram."""
+    buckets = {"0-3.9": 0, "4-6.9": 0, "7-8.9": 0, "9-10": 0}
+    with _connect() as conn:
+        for r in conn.execute("SELECT cvss_score FROM news WHERE cvss_score IS NOT NULL"):
+            s = r["cvss_score"]
+            key = "9-10" if s >= 9 else "7-8.9" if s >= 7 else "4-6.9" if s >= 4 else "0-3.9"
+            buckets[key] += 1
+    return buckets
+
+
+def _top_from_json_column(column: str, limit: int, analyzed_only=True) -> list[tuple]:
+    import collections, json
+    counter = collections.Counter()
+    where = "WHERE analysis_done=1" if analyzed_only else ""
+    with _connect() as conn:
+        for r in conn.execute(f"SELECT {column} AS c FROM news {where}"):
+            try:
+                for v in json.loads(r["c"] or "[]"):
+                    v = str(v).strip()
+                    if v:
+                        counter[v] += 1
+            except Exception:
+                pass
+    return counter.most_common(limit)
+
+
+def get_top_products(limit: int = 10) -> list[tuple]:
+    return _top_from_json_column("affected_products", limit)
+
+
+def get_top_cves(limit: int = 10) -> list[tuple]:
+    return _top_from_json_column("cve_ids", limit)
+
+
+def get_kev_news(limit: int = 50) -> list[dict]:
+    """KEV-flagged analyzed news, highest priority first."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM news WHERE kev_hit=1 AND analysis_done=1 "
+            "ORDER BY priority_score DESC, created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+

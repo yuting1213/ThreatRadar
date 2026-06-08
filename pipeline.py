@@ -34,6 +34,11 @@ def run_crawl_cycle() -> tuple[bool, str]:
         rss_new  = crawl_all_feeds()
         nvd_new  = fetch_recent_cves(days_back=1)
         analyzed = analyze_pending_news()
+        try:
+            from enrichment.service import enrich_pending
+            enrich_pending()
+        except Exception as e:
+            print(f"[Pipeline] enrichment skipped: {e}")
         # Record the actual finish time so get_enhanced_stats() always reflects
         # when the scheduler last ran, even if no new items were inserted.
         record_crawl_run(rss_new=rss_new, nvd_new=nvd_new, analyzed=analyzed)
