@@ -15,7 +15,8 @@ from database.db import insert_news
 from config import (
     NVD_API_BASE, NVD_RESULTS_PER_PAGE, NVD_MAX_PAGES, NVD_API_KEY,
 )
-
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 # Seconds to wait between page requests (well within the unauthenticated limit;
 # a key relaxes the limit but the small sleep keeps us a good API citizen).
 _PAGE_SLEEP = 1.0
@@ -92,6 +93,6 @@ def fetch_recent_cves(days_back: int = 1) -> int:
                 break
 
     except Exception as e:
-        print(f"[NVD] Error fetching CVEs: {e}")
+        logger.error(f"[NVD] Error fetching CVEs: {e}")
 
     return new_count

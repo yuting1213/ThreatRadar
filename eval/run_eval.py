@@ -39,7 +39,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import requests
 from config import OLLAMA_BASE_URL, OLLAMA_TIMEOUT
 from analyzer.llm import ANALYSIS_PROMPT
-
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 
 # Each model must be pulled in Ollama. On a 3060 12GB qwen2.5:14b also fits.
 MODELS = [
@@ -74,7 +75,7 @@ def load_dataset() -> list[dict]:
             try:
                 items.append(json.loads(line))
             except json.JSONDecodeError as e:
-                print(f"  [!] dataset line {n} not valid JSON: {e}")
+                logger.error(f"  [!] dataset line {n} not valid JSON: {e}")
     return items
 
 
@@ -233,7 +234,7 @@ def eval_combo(model: str, variant: str, test: list[dict], fewshot: list[dict]) 
             pred = predict(model, item["title"], item.get("content", ""), fewshot)
         except Exception as e:
             errors += 1
-            print(f"  [!] {model}/{variant} {item['id']} failed: {e}")
+            logger.error(f"  [!] {model}/{variant} {item['id']} failed: {e}")
             continue
 
         labels = item["labels"]
@@ -304,20 +305,20 @@ def save_results(table: str, fewshot: list[dict], test: list[dict]) -> Path:
 if __name__ == "__main__":
     items = load_dataset()
     if not items:
-        print(f"No items found in {DATASET}. Add labeled lines first.")
+        logger.error(f"No items found in {DATASET}. Add labeled lines first.")
         sys.exit(1)
 
     fewshot, test = split_dataset(items)
-    print(f"Loaded {len(items)} items → {len(test)} test, {len(fewshot)} few-shot exemplars")
+    logger.info(f"Loaded {len(items)} items → {len(test)} test, {len(fewshot)} few-shot exemplars")
 
     rows = []
     for model in MODELS:
         for variant in VARIANTS:
-            print(f"\n=== {model} / {variant} ===")
+            logger.info(f"\n=== {model} / {variant} ===")
             rows.append(eval_combo(model, variant, test, fewshot))
 
     table = format_markdown_table(rows)
-    print("\n" + table)
+    logger.info("\n" + table)
 
     out = save_results(table, fewshot, test)
-    print(f"\nSaved → {out}")
+    logger.info(f"\nSaved → {out}")

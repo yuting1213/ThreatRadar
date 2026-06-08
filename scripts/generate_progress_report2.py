@@ -11,7 +11,11 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from PIL import Image, ImageDraw, ImageFont
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent)) # 確保能找到根目錄的 logger_config
 
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "report_outputs"
 ASSET_DIR = OUT_DIR / "report2_assets"
@@ -446,7 +450,7 @@ def build() -> None:
     )
 
     doc.save(OUT_DOCX)
-    print(OUT_DOCX)
+    logger.info(f"Progress report saved to {OUT_DOCX}")
 
 
 if __name__ == "__main__":

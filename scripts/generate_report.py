@@ -11,7 +11,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from PIL import Image, ImageDraw, ImageFont
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "report_outputs"
@@ -456,7 +460,7 @@ def build() -> None:
     )
 
     doc.save(OUT_DOCX)
-    print(OUT_DOCX)
+    logger.info(f"Report saved to {OUT_DOCX}")
 
 
 if __name__ == "__main__":

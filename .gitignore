@@ -40,3 +40,7 @@ eval/results/
 # User-generated report exports — keep the folder, ignore the files inside
 outputs/*
 !outputs/.gitkeep
+
+# Application logs
+logs/
+*.log

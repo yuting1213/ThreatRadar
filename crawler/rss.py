@@ -11,7 +11,8 @@ import re
 import requests
 from database.db import insert_news
 from config import RSS_FEEDS
-
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 # feedparser.parse(url) has no timeout knob and will hang the whole
 # scheduler tick if a feed stalls. Fetch with requests first, then
 # hand the bytes to feedparser.
@@ -75,5 +76,5 @@ def crawl_all_feeds() -> int:
                     if inserted:
                         total_new += 1
         except Exception as e:
-            print(f"[RSS] Error crawling {feed_config['name']}: {e}")
+            logger.error(f"[RSS] Error crawling {feed_config['name']}: {e}")
     return total_new
