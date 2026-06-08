@@ -25,7 +25,8 @@ from config import (
     THREAT_LEVELS, MAX_ANALYSIS_RETRIES, LLM_CONCURRENCY,
     PROMPT_VERSION, LOCAL_PROVIDER,
 )
-
+from logger_config import setup_logger
+logger = setup_logger(__name__)
 # ── Prompt ─────────────────────────────────────────────────────────────────────
 # The <article> block is UNTRUSTED external text. The instructions above and
 # below it tell the model to treat anything inside purely as data, never as a
@@ -189,8 +190,8 @@ def analyze_single(news_id: int, title: str, content: str) -> bool:
     else:
         retries = mark_analysis_failed(news_id, MAX_ANALYSIS_RETRIES)
         tag = "giving up" if retries >= MAX_ANALYSIS_RETRIES else "will retry"
-        print(f"[LLM] news {news_id} primary[{primary_kind}] {tag} "
-              f"({retries}/{MAX_ANALYSIS_RETRIES}): {primary.get('error')}")
+        logger.info(f"[LLM] news {news_id} primary[{primary_kind}] {tag} "
+                    f"({retries}/{MAX_ANALYSIS_RETRIES}): {primary.get('error')}")
 
     # 2) Secondary provider, per mode.
     if _should_run_secondary(mode, primary):
@@ -198,8 +199,8 @@ def analyze_single(news_id: int, title: str, content: str) -> bool:
         sres = make_provider(secondary_kind).analyze(title, content)
         _persist_provider_result(news_id, sres)
         if sres.get("status") != "ok":
-            print(f"[LLM] news {news_id} secondary[{secondary_kind}] "
-                  f"status={sres.get('status')}: {sres.get('error')}")
+            logger.info(f"[LLM] news {news_id} secondary[{secondary_kind}] "
+                        f"status={sres.get('status')}: {sres.get('error')}")
 
     return primary_ok
 
@@ -211,8 +212,8 @@ def analyze_pending_news() -> int:
 
     # Misconfiguration guard: cloud chosen as primary but no key/model set.
     if config.primary_provider_kind() == "cloud" and not config.cloud_enabled():
-        print("[LLM] WARNING: PRIMARY_PROVIDER=cloud but CLOUD_LLM_API_KEY/"
-              "CLOUD_LLM_MODEL are not set — every item will be marked 分析失敗.")
+        logger.warning("[LLM] WARNING: PRIMARY_PROVIDER=cloud but CLOUD_LLM_API_KEY/"
+                       "CLOUD_LLM_MODEL are not set — every item will be marked 分析失敗.")
 
     success = 0
     with ThreadPoolExecutor(max_workers=LLM_CONCURRENCY) as pool:
@@ -225,6 +226,6 @@ def analyze_pending_news() -> int:
                 success += 1
 
     prov, model = config.primary_label()
-    print(f"[LLM] Analyzed {success}/{len(pending)} items "
-          f"(primary={prov}/{model}, mode={config.ANALYSIS_MODE}, concurrency={LLM_CONCURRENCY})")
+    logger.info(f"[LLM] Analyzed {success}/{len(pending)} items "
+                f"(primary={prov}/{model}, mode={config.ANALYSIS_MODE}, concurrency={LLM_CONCURRENCY})")
     return success
