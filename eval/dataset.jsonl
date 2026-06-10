@@ -9,15 +9,16 @@
 #   labels.cve_ids          : list of "CVE-YYYY-NNNN" strings (empty list if none)
 #   labels.affected_products: list of product / vendor names mentioned
 #
-# 20 labeled examples below. ex001–ex005 are illustrative; ex006–ex020 are
+# 40 labeled examples below. ex001–ex005 are illustrative; ex006–ex040 are
 # based on real, well-documented incidents (real CVE IDs / products).
 #
 # CAVEAT: famous CVEs (Log4Shell, Heartbleed, ...) may sit in the models'
 # training data, so a model could "recognize" rather than "analyze" them.
 # For a less biased eval, the team should ALSO add fresh news crawled by the
-# pipeline (pull from threat_radar.db once it has run). Target ~40 items.
+# pipeline (pull from threat_radar.db once it has run).
 #
-# Level balance so far: CRITICAL ×5, HIGH ×5, MEDIUM ×4, LOW ×3, INFO ×3.
+# Level balance: CRITICAL ×10, HIGH ×10, MEDIUM ×8, LOW ×7, INFO ×5  (40 total).
+# Emphasis follows the Track A spec: ~20 CRITICAL/HIGH + ~20 MEDIUM/LOW/INFO.
 #
 {"id": "ex001", "title": "CISA warns of actively exploited Microsoft Exchange zero-day", "content": "CISA has added a critical Microsoft Exchange Server vulnerability to its Known Exploited Vulnerabilities catalog. The flaw allows unauthenticated remote code execution and is being actively exploited in the wild. Patches are available. Federal agencies have one week to remediate.", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2024-12345"], "affected_products": ["Microsoft Exchange Server", "Microsoft"]}}
 {"id": "ex002", "title": "Apache Tomcat 嚴重資安漏洞 影響多版本", "content": "Apache 軟體基金會釋出 Tomcat 緊急更新，修補一個可導致遠端程式執行的 Deserialization 漏洞，CVSS 評分 8.1。Tomcat 9.x、10.x、11.x 多個版本受影響，企業應盡速升級。目前尚無 PoC 公開。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2024-23456"], "affected_products": ["Apache Tomcat", "Tomcat"]}}
@@ -39,3 +40,23 @@
 {"id": "ex018", "title": "nginx 釋出更新 修補低嚴重度安全強化", "content": "nginx 釋出新版本，包含若干臭蟲修正與一個低嚴重度的安全強化，該問題需要極特殊的設定條件才能觸發，實務上風險低。建議一般用戶於常規更新時套用。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["nginx"]}}
 {"id": "ex019", "title": "OWASP 發布 2024 年 Top 10 網頁安全風險更新", "content": "OWASP 基金會發布最新版 Top 10 網頁應用程式安全風險清單，反映近年攻擊趨勢的變化，包含存取控制失效與不安全設計等議題。此為產業參考指南，無特定漏洞或立即風險。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
 {"id": "ex020", "title": "研究團隊發表針對大型語言模型的提示注入攻擊研究", "content": "某學術團隊發表論文，探討大型語言模型 (LLM) 在面對提示注入 (prompt injection) 時的脆弱性，並提出數種防禦策略。此為研究性質報告，提升業界對 LLM 安全的認識，無立即可利用的漏洞。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
+{"id": "ex021", "title": "Atlassian Confluence OGNL injection 零時差遭積極利用", "content": "Atlassian Confluence Server 與 Data Center 存在 OGNL injection 漏洞，未經認證的攻擊者可透過特製 HTTP 請求在伺服器上執行任意程式碼。漏洞被揭露時已遭野外積極利用，攻擊者用於植入 web shell 與挖礦程式。建議立即升級至修補版本或套用緩解措施。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2022-26134"], "affected_products": ["Atlassian Confluence", "Confluence"]}}
+{"id": "ex022", "title": "Fortinet FortiOS SSL-VPN 遠端程式碼執行漏洞遭利用", "content": "Fortinet FortiOS 的 SSL-VPN 元件存在一個越界寫入 (out-of-bounds write) 漏洞，未經認證的遠端攻擊者可藉由特製請求執行任意程式碼。Fortinet 證實該漏洞可能已遭野外利用，影響多個 FortiOS 版本。建議立即套用更新。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2024-21762"], "affected_products": ["Fortinet FortiOS", "FortiOS"]}}
+{"id": "ex023", "title": "Ivanti Connect Secure 認證繞過與命令注入漏洞遭串連攻擊", "content": "Ivanti Connect Secure 與 Policy Secure 閘道存在認證繞過與命令注入兩個漏洞，攻擊者可串連兩者在未經認證情況下執行任意指令。多個威脅組織已大規模利用這組漏洞入侵企業 VPN 設備。建議立即套用修補並進行入侵跡象調查。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2023-46805", "CVE-2024-21887"], "affected_products": ["Ivanti Connect Secure", "Ivanti"]}}
+{"id": "ex024", "title": "PHP CGI 參數注入漏洞遭勒索軟體利用", "content": "Windows 平台上以 CGI 模式運行的 PHP 存在參數注入漏洞，攻擊者可繞過先前 CVE-2012-1823 的修補並執行任意程式碼。漏洞公開後數日內即被 TellYouThePass 勒索軟體集團用於攻擊，建議立即升級 PHP 版本。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2024-4577"], "affected_products": ["PHP"]}}
+{"id": "ex025", "title": "Cisco IOS XE Web UI 提權漏洞遭大規模利用植入後門", "content": "Cisco IOS XE 軟體的 Web UI 功能存在權限提升漏洞，未經認證的遠端攻擊者可建立具最高權限的帳號並完全控制設備。全球數萬台 Cisco 網路設備遭利用此漏洞植入惡意 implant。建議停用 HTTP/HTTPS Server 功能並套用更新。", "labels": {"threat_level": "CRITICAL", "cve_ids": ["CVE-2023-20198"], "affected_products": ["Cisco IOS XE", "Cisco"]}}
+{"id": "ex026", "title": "VMware vCenter Server 堆積溢位漏洞可導致遠端程式碼執行", "content": "VMware vCenter Server 的 DCERPC 協定實作存在堆積溢位 (heap overflow) 漏洞，具網路存取權的攻擊者可藉此執行遠端程式碼。VMware 已釋出修補，目前尚未確認野外利用。建議管理員盡速更新 vCenter。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2024-37079"], "affected_products": ["VMware vCenter Server", "VMware vCenter"]}}
+{"id": "ex027", "title": "GitLab 帳號接管漏洞 透過密碼重設信箱濫發", "content": "GitLab 社群版與企業版存在一個漏洞，攻擊者可將密碼重設郵件發送到未經驗證的任意電子郵件地址，進而接管帳號。在未啟用雙因素認證的情況下風險尤高。GitLab 已釋出修補，建議立即升級並啟用 2FA。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2023-7028"], "affected_products": ["GitLab"]}}
+{"id": "ex028", "title": "Spring Framework Spring4Shell 遠端程式碼執行漏洞", "content": "Spring Framework 在特定 JDK 與部署設定下存在透過資料繫結機制觸發的遠端程式碼執行漏洞，攻擊者可上傳惡意 web shell。利用需符合特定條件，但影響大量 Java 應用。建議升級 Spring Framework 至修補版本。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2022-22965"], "affected_products": ["Spring Framework", "Spring"]}}
+{"id": "ex029", "title": "Apache Struts 檔案上傳路徑遍歷漏洞可導致 RCE", "content": "Apache Struts 存在一個檔案上傳邏輯漏洞，攻擊者可透過路徑遍歷上傳惡意檔案並達成遠端程式碼執行。已有概念驗證程式碼公開。建議使用受影響版本的應用立即升級至已修補的 Struts 版本。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2023-50164"], "affected_products": ["Apache Struts", "Struts"]}}
+{"id": "ex030", "title": "Microsoft Outlook 權限提升漏洞外洩 NTLM 憑證", "content": "Microsoft Outlook 存在一個權限提升漏洞，攻擊者只需發送特製郵件即可在使用者未開啟郵件的情況下觸發，竊取 Net-NTLMv2 雜湊用於進一步認證攻擊。該漏洞已遭國家級駭客組織利用。建議立即套用微軟更新。", "labels": {"threat_level": "HIGH", "cve_ids": ["CVE-2023-23397"], "affected_products": ["Microsoft Outlook", "Microsoft Office"]}}
+{"id": "ex031", "title": "熱門 WordPress 外掛 SSRF 漏洞 PoC 公開但已修補", "content": "一款安裝量數十萬的 WordPress SEO 外掛被發現存在伺服器端請求偽造 (SSRF) 漏洞，認證使用者可藉此探測內部網路。研究員公開了概念驗證，但廠商已於兩週前釋出修補，啟用自動更新的網站不受影響。建議手動確認外掛已更新。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": ["WordPress"]}}
+{"id": "ex032", "title": "鎖定企業 Microsoft 365 帳號的釣魚活動透過 AiTM 繞過 MFA", "content": "資安研究團隊揭露一波針對企業 Microsoft 365 帳號的釣魚活動，攻擊者使用 adversary-in-the-middle 反向代理頁面竊取 session cookie 以繞過多因素認證。活動規模中等，主要鎖定特定產業。建議導入抗釣魚的 FIDO2 認證。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": ["Microsoft 365"]}}
+{"id": "ex033", "title": "curl SOCKS5 代理堆積緩衝區溢位漏洞", "content": "廣泛使用的 curl 與 libcurl 在透過 SOCKS5 代理解析過長主機名稱時存在堆積緩衝區溢位漏洞。利用需符合特定設定條件，實務上難以可靠觸發，目前無野外利用。維護者已釋出修補版本，建議升級。", "labels": {"threat_level": "MEDIUM", "cve_ids": ["CVE-2023-38545"], "affected_products": ["curl", "libcurl"]}}
+{"id": "ex034", "title": "開源 SQL 資料庫驅動程式存在中等風險注入問題 已修補", "content": "一個被多種語言生態系使用的開源資料庫驅動程式被發現在處理特定參數時存在 SQL injection 風險，需應用程式以特定方式呼叫才會受影響。研究員提供了 PoC，維護者已釋出修補。建議相依此驅動的專案更新版本。", "labels": {"threat_level": "MEDIUM", "cve_ids": [], "affected_products": ["MySQL Connector"]}}
+{"id": "ex035", "title": "PostgreSQL 釋出更新 修補低風險權限檢查問題", "content": "PostgreSQL 全球開發團隊釋出小版本更新，修補一個低風險的權限檢查問題，僅在資料庫管理員已授予特定權限的非預設情境下可被觸發。無已知野外利用。建議於常規維護週期套用更新。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["PostgreSQL"]}}
+{"id": "ex036", "title": "Redis 釋出更新 修補低嚴重度阻斷服務問題", "content": "Redis 釋出新版本，修補一個低嚴重度問題，經過認證的使用者在特定指令下可造成服務短暫不穩。需具備認證存取權，風險有限。建議一般部署於下次更新時套用。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["Redis"]}}
+{"id": "ex037", "title": "Apache HTTP Server 修補低嚴重度模組問題", "content": "Apache HTTP Server 釋出維護版本，修補某模組在非預設設定下的低嚴重度問題，需要管理員啟用特定設定才會受影響，實務風險低。建議套用例行更新。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["Apache HTTP Server", "Apache httpd"]}}
+{"id": "ex038", "title": "Node.js 釋出安全更新 修補低風險問題", "content": "Node.js 專案釋出安全更新，包含一個低嚴重度的問題修補，僅在處理特製輸入且符合特定條件時才可能影響可用性。無已知利用。建議用戶更新至最新 LTS 版本。", "labels": {"threat_level": "LOW", "cve_ids": [], "affected_products": ["Node.js"]}}
+{"id": "ex039", "title": "ENISA 發布 2024 年度威脅情勢報告", "content": "歐盟網路安全局 (ENISA) 發布年度 Threat Landscape 報告，盤點勒索軟體、DDoS 與供應鏈攻擊等主要威脅趨勢，並提供產業防禦建議。報告屬趨勢分析性質，未揭露特定漏洞或立即風險。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
+{"id": "ex040", "title": "NIST 更新數位身分指引 調整密碼建議", "content": "美國國家標準暨技術研究院 (NIST) 更新 SP 800-63 數位身分指引，調整對密碼長度、複雜度與定期更換的建議。此為標準與最佳實務更新，供組織制定政策參考，無立即資安風險。", "labels": {"threat_level": "INFO", "cve_ids": [], "affected_products": []}}
